@@ -10,7 +10,7 @@ from app.main import create_app
 def settings(tmp_path):
     return Settings(
         app_env="test",
-        secret_key="test-secret",
+        secret_key="test-secret-key-with-at-least-32-bytes",
         database_url=f"sqlite+aiosqlite:///{tmp_path / 'test.db'}",
         storage_dir=tmp_path / "storage",
         mock_stage_delay_ms=0,
