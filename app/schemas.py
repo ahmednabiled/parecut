@@ -1,8 +1,11 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field
 
 from parecut_engine.schemas import PipelineConfig, SpeakerRole, StageState
+
+FPS = Literal["24", "25", "29.97", "30", "60"]
 
 
 class UserRead(BaseModel):
@@ -75,6 +78,13 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+
+
+class JobCreate(BaseModel):
+    upload_key: str
+    source_filename: str = Field(min_length=1)
+    fps: FPS = "25"
+    pipeline: PipelineConfig = Field(default_factory=PipelineConfig)
 
 
 class ProfileUpdate(BaseModel):
