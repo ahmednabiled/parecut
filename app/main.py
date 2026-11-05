@@ -4,6 +4,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.config import Settings, get_settings
 from app.db import create_engine
+from app.routers import auth
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -21,5 +22,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    app.include_router(auth.router)
 
     return app
