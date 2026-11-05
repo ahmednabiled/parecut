@@ -2,6 +2,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.config import Settings
+from app.db import create_db_and_tables
 from app.main import create_app
 
 
@@ -19,7 +20,9 @@ def settings(tmp_path):
 
 @pytest.fixture
 async def app(settings):
-    return create_app(settings)
+    application = create_app(settings)
+    await create_db_and_tables(application.state.engine)
+    yield application
 
 
 @pytest.fixture
