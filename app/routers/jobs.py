@@ -13,7 +13,7 @@ from app.db import get_session
 from app.deps import get_current_user, get_settings_dep
 from app.events import EventBroker, get_broker
 from app.models import Job, JobArtifact, User
-from app.schemas import JobCreate, JobRead, to_job_read
+from app.schemas import JobCreate, JobRead, SpeakerRolesUpdate, to_job_read
 from app.services.jobs import (
     InsufficientCredits,
     UploadNotFound,
@@ -21,6 +21,7 @@ from app.services.jobs import (
     load_job,
 )
 from app.services.pipeline import PipelineRunner, get_runner
+from app.services.roughcut import regenerate_cut_outputs
 from app.storage import ObjectStorage, get_storage
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
@@ -93,6 +94,46 @@ async def get_job(
     session: AsyncSession = Depends(get_session),
 ) -> JobRead:
     job = await load_job(session, user, job_id)
+    artifacts = (
+        await session.exec(
+            select(JobArtifact)
+            .where(JobArtifact.job_id == job.id)
+            .order_by(JobArtifact.created_at)
+        )
+    ).all()
+    return to_job_read(job, artifacts)
+
+
+@router.patch("/{job_id}/speakers", response_model=JobRead)
+async def update_speakers(
+    job_id: str,
+    payload: SpeakerRolesUpdate,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    storage: ObjectStorage = Depends(get_storage),
+    settings: Settings = Depends(get_settings_dep),
+) -> JobRead:
+    job = await load_job(session, user, job_id)
+    if set(payload.roles) != set((job.speaker_roles or {}).keys()):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="roles must match detected speakers",
+        )
+
+    job.speaker_roles = dict(payload.roles)
+    try:
+        await regenerate_cut_outputs(
+            session, storage, job, job.speaker_roles, settings
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Transcript is not available for this job",
+        ) from exc
+
+    session.add(job)
+    await session.commit()
+
     artifacts = (
         await session.exec(
             select(JobArtifact)

@@ -87,6 +87,10 @@ class JobCreate(BaseModel):
     pipeline: PipelineConfig = Field(default_factory=PipelineConfig)
 
 
+class SpeakerRolesUpdate(BaseModel):
+    roles: dict[str, SpeakerRole]
+
+
 class ProfileUpdate(BaseModel):
     full_name: str | None = Field(default=None, min_length=1)
     default_fps: str | None = Field(default=None, pattern=r"^(24|25|29\.97|30|60)$")
