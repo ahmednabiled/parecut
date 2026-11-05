@@ -4,7 +4,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.config import Settings, get_settings
 from app.db import create_engine
-from app.routers import auth, profile
+from app.routers import auth, profile, uploads
+from app.storage import LocalObjectStorage
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -18,6 +19,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.sessionmaker = async_sessionmaker(
         engine, class_=AsyncSession, expire_on_commit=False
     )
+    app.state.storage = LocalObjectStorage(settings.storage_dir, settings.secret_key)
 
     @app.get("/api/health")
     async def health() -> dict[str, str]:
@@ -25,5 +27,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(auth.router)
     app.include_router(profile.router)
+    app.include_router(uploads.router)
 
     return app
