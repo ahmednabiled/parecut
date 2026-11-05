@@ -1,10 +1,12 @@
+from collections import defaultdict
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.db import get_session
 from app.deps import get_current_user
-from app.models import CreditLedger, Job, User, UserProfile
+from app.models import CreditLedger, Job, JobArtifact, User, UserProfile
 from app.schemas import (
     LedgerRead,
     ProfileResponse,
@@ -34,10 +36,21 @@ async def _build_response(
         )
     ).all()
 
+    artifacts = (
+        await session.exec(
+            select(JobArtifact)
+            .where(JobArtifact.job_id.in_([job.id for job in jobs]))
+            .order_by(JobArtifact.created_at)
+        )
+    ).all()
+    grouped: dict[str, list[JobArtifact]] = defaultdict(list)
+    for artifact in artifacts:
+        grouped[artifact.job_id].append(artifact)
+
     return ProfileResponse(
         user=to_user_read(user),
         profile=to_profile_read(profile),
-        jobs=[to_job_read(job) for job in jobs],
+        jobs=[to_job_read(job, grouped[job.id]) for job in jobs],
         ledger=[
             LedgerRead(
                 id=entry.id,

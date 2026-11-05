@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -6,13 +8,22 @@ from app.config import Settings, get_settings
 from app.db import create_engine
 from app.events import InMemoryEventBroker
 from app.routers import auth, jobs, profile, uploads
+from app.seed import reconcile_orphan_jobs, seed_demo
 from app.services.pipeline import MockPipelineRunner
 from app.storage import LocalObjectStorage
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
-    app = FastAPI(title="Parecut", version="0.1.0")
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        if settings.seed_demo:
+            await seed_demo(app.state.sessionmaker, app.state.storage, settings)
+        await reconcile_orphan_jobs(app.state.sessionmaker, settings)
+        yield
+
+    app = FastAPI(title="Parecut", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
     settings.storage_dir.mkdir(parents=True, exist_ok=True)
 
