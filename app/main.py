@@ -4,7 +4,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.config import Settings, get_settings
 from app.db import create_engine
-from app.routers import auth
+from app.routers import auth, profile
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -24,5 +24,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"status": "ok"}
 
     app.include_router(auth.router)
+    app.include_router(profile.router)
 
     return app
