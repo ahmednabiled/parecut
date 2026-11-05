@@ -4,6 +4,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.config import Settings, get_settings
 from app.db import create_engine
+from app.events import InMemoryEventBroker
 from app.routers import auth, jobs, profile, uploads
 from app.services.pipeline import NullPipelineRunner
 from app.storage import LocalObjectStorage
@@ -22,6 +23,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.storage = LocalObjectStorage(settings.storage_dir, settings.secret_key)
     app.state.runner = NullPipelineRunner()
+    app.state.broker = InMemoryEventBroker()
 
     @app.get("/api/health")
     async def health() -> dict[str, str]:

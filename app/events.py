@@ -1,0 +1,48 @@
+import asyncio
+from collections.abc import AsyncIterator
+from typing import Protocol
+
+from fastapi import Request
+
+from parecut_engine.schemas import JobEvent
+
+
+class EventBroker(Protocol):
+    async def publish(self, job_id: str, event: JobEvent) -> None: ...
+
+    def subscribe(self, job_id: str) -> AsyncIterator[JobEvent]: ...
+
+
+class _Subscription:
+    def __init__(self, broker: "InMemoryEventBroker", job_id: str) -> None:
+        self._broker = broker
+        self._job_id = job_id
+        self._queue: asyncio.Queue[JobEvent] = asyncio.Queue()
+        broker._subscribers.setdefault(job_id, set()).add(self._queue)
+
+    def __aiter__(self) -> "_Subscription":
+        return self
+
+    async def __anext__(self) -> JobEvent:
+        return await self._queue.get()
+
+    async def close(self) -> None:
+        subscribers = self._broker._subscribers.get(self._job_id)
+        if subscribers is not None:
+            subscribers.discard(self._queue)
+
+
+class InMemoryEventBroker:
+    def __init__(self) -> None:
+        self._subscribers: dict[str, set[asyncio.Queue[JobEvent]]] = {}
+
+    async def publish(self, job_id: str, event: JobEvent) -> None:
+        for queue in list(self._subscribers.get(job_id, ())):
+            queue.put_nowait(event)
+
+    def subscribe(self, job_id: str) -> AsyncIterator[JobEvent]:
+        return _Subscription(self, job_id)
+
+
+def get_broker(request: Request) -> EventBroker:
+    return request.app.state.broker

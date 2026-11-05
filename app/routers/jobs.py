@@ -1,14 +1,17 @@
+import json
 from collections import defaultdict
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
+from sse_starlette.sse import EventSourceResponse
 
 from app.config import Settings
 from app.db import get_session
 from app.deps import get_current_user, get_settings_dep
+from app.events import EventBroker, get_broker
 from app.models import Job, JobArtifact, User
 from app.schemas import JobCreate, JobRead, to_job_read
 from app.services.jobs import (
@@ -98,6 +101,40 @@ async def get_job(
         )
     ).all()
     return to_job_read(job, artifacts)
+
+
+@router.get("/{job_id}/events")
+async def job_events(
+    job_id: str,
+    request: Request,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    broker: EventBroker = Depends(get_broker),
+):
+    job = await load_job(session, user, job_id)
+    artifacts = (
+        await session.exec(select(JobArtifact).where(JobArtifact.job_id == job.id))
+    ).all()
+    snapshot = to_job_read(job, artifacts).model_dump(mode="json")
+    subscription = broker.subscribe(job_id)
+
+    async def event_stream():
+        try:
+            yield {"event": "snapshot", "data": json.dumps(snapshot)}
+            if job.status in {"completed", "failed"}:
+                return
+            async for event in subscription:
+                yield {"event": event.type, "data": event.model_dump_json()}
+                if event.type in {"job.completed", "job.failed"}:
+                    break
+                if await request.is_disconnected():
+                    break
+        finally:
+            close = getattr(subscription, "close", None)
+            if close is not None:
+                await close()
+
+    return EventSourceResponse(event_stream(), ping=15)
 
 
 @router.get("/{job_id}/artifacts/{artifact_id}/download")
