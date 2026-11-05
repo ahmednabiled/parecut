@@ -1,13 +1,22 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import JSONResponse
+from collections import defaultdict
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import JSONResponse, RedirectResponse
+from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.config import Settings
 from app.db import get_session
 from app.deps import get_current_user, get_settings_dep
-from app.models import User
+from app.models import Job, JobArtifact, User
 from app.schemas import JobCreate, JobRead, to_job_read
-from app.services.jobs import InsufficientCredits, UploadNotFound, create_job
+from app.services.jobs import (
+    InsufficientCredits,
+    UploadNotFound,
+    create_job,
+    load_job,
+)
 from app.services.pipeline import PipelineRunner, get_runner
 from app.storage import ObjectStorage, get_storage
 
@@ -39,3 +48,77 @@ async def create(
             },
         )
     return to_job_read(job)
+
+
+@router.get("", response_model=list[JobRead])
+async def list_jobs(
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[JobRead]:
+    jobs = (
+        await session.exec(
+            select(Job)
+            .where(Job.user_id == user.id)
+            .order_by(Job.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+    ).all()
+    if not jobs:
+        return []
+
+    artifacts = (
+        await session.exec(
+            select(JobArtifact)
+            .where(JobArtifact.job_id.in_([job.id for job in jobs]))
+            .order_by(JobArtifact.created_at)
+        )
+    ).all()
+    grouped: dict[str, list[JobArtifact]] = defaultdict(list)
+    for artifact in artifacts:
+        grouped[artifact.job_id].append(artifact)
+
+    return [to_job_read(job, grouped[job.id]) for job in jobs]
+
+
+@router.get("/{job_id}", response_model=JobRead)
+async def get_job(
+    job_id: str,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> JobRead:
+    job = await load_job(session, user, job_id)
+    artifacts = (
+        await session.exec(
+            select(JobArtifact)
+            .where(JobArtifact.job_id == job.id)
+            .order_by(JobArtifact.created_at)
+        )
+    ).all()
+    return to_job_read(job, artifacts)
+
+
+@router.get("/{job_id}/artifacts/{artifact_id}/download")
+async def download_artifact(
+    job_id: str,
+    artifact_id: str,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    storage: ObjectStorage = Depends(get_storage),
+    settings: Settings = Depends(get_settings_dep),
+) -> RedirectResponse:
+    job = await load_job(session, user, job_id)
+    artifact = await session.get(JobArtifact, artifact_id)
+    if artifact is None or artifact.job_id != job.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found"
+        )
+
+    url = storage.signed_download_url(
+        artifact.r2_key,
+        Path(artifact.r2_key).name,
+        settings.download_url_ttl_seconds,
+    )
+    return RedirectResponse(url=url, status_code=status.HTTP_302_FOUND)

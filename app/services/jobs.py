@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from fastapi import HTTPException, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.config import Settings
@@ -8,6 +9,13 @@ from app.schemas import JobCreate
 from app.services.credits import add_ledger_entry, reserve_minutes
 from app.services.stages import initial_stage_states
 from app.storage import ObjectStorage
+
+
+async def load_job(session: AsyncSession, user: User, job_id: str) -> Job:
+    job = await session.get(Job, job_id)
+    if job is None or job.user_id != user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    return job
 
 
 class UploadNotFound(Exception):
