@@ -84,6 +84,18 @@ use a white state layer at 6–10% over the current surface. Focus is a 2px
 Material Symbols Rounded, self-hosted. Use an icon only when it adds meaning; lists,
 metrics, and settings sections do not need decoration.
 
+## Brand assets
+
+Owner-supplied profile assets, self-hosted in `web/public/brand/`:
+
+- `logo.png` — the P mark, black removed, used in the brand lockup everywhere.
+- `cover.webp` — the profile cover, grayscale, used once as the brand band at the
+  bottom of the auth panel. Hidden below 960 px viewport height.
+- `favicon.png` — the P mark on a surface-colored square.
+
+The cover is never used as a page background and never tinted. The logo is never
+recreated or redrawn.
+
 ## Constraints
 
 - No gradients, glass, glow, or mesh backgrounds.

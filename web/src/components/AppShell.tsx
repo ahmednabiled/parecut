@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { apiFetch } from "../api/client";
 import type { ProfileResponse } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
+import Brand from "./Brand";
 import Icon, { type IconName } from "./Icon";
 
 const NAV: { to: string; label: string; icon: IconName; end: boolean }[] = [
@@ -38,13 +39,8 @@ export default function AppShell() {
   return (
     <div className="flex min-h-screen bg-surface text-on-surface">
       <aside className="hidden w-60 shrink-0 flex-col border-r border-outline-variant bg-surface-container-low px-3 py-5 lg:flex">
-        <NavLink to="/" className="flex items-center gap-3 px-2 py-1">
-          <span className="grid size-9 place-items-center rounded border border-outline text-on-surface">
-            <Icon name="content_cut" />
-          </span>
-          <span className="font-mono text-xs font-medium tracking-[0.26em]">
-            PARECUT
-          </span>
+        <NavLink to="/" className="px-2 py-1">
+          <Brand />
         </NavLink>
 
         <nav className="mt-8 space-y-1">
@@ -105,14 +101,7 @@ export default function AppShell() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-outline-variant px-5 py-4 lg:hidden">
-          <div className="flex items-center gap-2">
-            <span className="grid size-8 place-items-center rounded border border-outline">
-              <Icon name="content_cut" size={16} />
-            </span>
-            <span className="font-mono text-[12px] font-medium tracking-[0.24em]">
-              PARECUT
-            </span>
-          </div>
+          <Brand />
           <div className="flex items-center gap-2">
             <span className="font-mono text-[12px] text-on-surface-variant">
               {balance.toFixed(1)} min

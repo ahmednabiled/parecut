@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import Icon from "./Icon";
+import Brand from "./Brand";
 
 interface AuthLayoutProps {
   title: string;
@@ -19,15 +19,8 @@ export default function AuthLayout({ title, subtitle, children }: AuthLayoutProp
   return (
     <main className="min-h-screen bg-surface text-on-surface">
       <div className="mx-auto grid min-h-screen max-w-6xl lg:grid-cols-[1.02fr_0.98fr]">
-        <section className="hidden flex-col justify-between border-r border-outline-variant px-12 py-12 lg:flex">
-          <div className="flex items-center gap-3">
-            <span className="grid size-9 place-items-center rounded border border-outline text-on-surface">
-              <Icon name="content_cut" />
-            </span>
-            <span className="font-mono text-xs font-medium tracking-[0.28em] text-on-surface">
-              PARECUT
-            </span>
-          </div>
+        <section className="hidden flex-col justify-between overflow-hidden border-r border-outline-variant px-12 py-12 lg:flex">
+          <Brand size="lg" />
 
           <div className="max-w-[34rem]">
             <h1 className="text-[38px] font-semibold leading-[1.12] tracking-[-0.02em]">
@@ -61,20 +54,25 @@ export default function AuthLayout({ title, subtitle, children }: AuthLayoutProp
             </ol>
           </div>
 
-          <p className="text-[13px] text-on-surface-variant">
-            AI audio engineering and rough-cut preparation.
-          </p>
+          <div>
+            <p className="text-[13px] text-on-surface-variant">
+              AI audio engineering and rough-cut preparation.
+            </p>
+            <div className="-mx-12 -mb-12 mt-6 hidden [@media(min-height:960px)]:block">
+              <img
+                src="/brand/cover.webp"
+                alt=""
+                aria-hidden="true"
+                className="h-44 w-full object-cover object-center grayscale"
+              />
+            </div>
+          </div>
         </section>
 
         <section className="flex items-center justify-center px-6 py-12 sm:px-10">
           <div className="w-full max-w-md">
-            <div className="mb-10 flex items-center gap-3 lg:hidden">
-              <span className="grid size-9 place-items-center rounded border border-outline text-on-surface">
-                <Icon name="content_cut" />
-              </span>
-              <span className="font-mono text-xs font-medium tracking-[0.26em]">
-                PARECUT
-              </span>
+            <div className="mb-10 lg:hidden">
+              <Brand />
             </div>
 
             <h2 className="text-[32px] font-semibold leading-10 tracking-[-0.02em]">

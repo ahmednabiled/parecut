@@ -63,7 +63,7 @@ export default function Dashboard() {
             </p>
           </div>
 
-          <dl className="divide-y divide-outline-variant border-t border-outline-variant px-6 lg:border-l lg:border-t-0">
+          <dl className="flex flex-col justify-center divide-y divide-outline-variant border-t border-outline-variant px-6 py-2 lg:border-l lg:border-t-0">
             <div className="flex items-baseline justify-between py-4">
               <dt className="text-[13px] text-on-surface-variant">Jobs</dt>
               <dd className="font-mono text-lg text-on-surface">

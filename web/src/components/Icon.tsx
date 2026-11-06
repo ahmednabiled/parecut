@@ -1,5 +1,4 @@
 import add from "@material-symbols/svg-400/rounded/add.svg";
-import contentCut from "@material-symbols/svg-400/rounded/content_cut.svg";
 import dashboard from "@material-symbols/svg-400/rounded/dashboard.svg";
 import graphicEq from "@material-symbols/svg-400/rounded/graphic_eq.svg";
 import logout from "@material-symbols/svg-400/rounded/logout.svg";
@@ -8,7 +7,6 @@ import type { CSSProperties } from "react";
 
 const ICONS = {
   add,
-  content_cut: contentCut,
   dashboard,
   graphic_eq: graphicEq,
   logout,
