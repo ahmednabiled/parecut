@@ -6,11 +6,16 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Settings from "./pages/Settings";
 
-function Placeholder({ title, detail }: { title: string; detail: string }) {
+function ComingSoon({ title, detail }: { title: string; detail: string }) {
   return (
     <div>
-      <h1 className="text-3xl font-semibold tracking-[-0.03em]">{title}</h1>
-      <p className="mt-3 max-w-lg text-sm leading-6 text-mist-400">{detail}</p>
+      <h1 className="text-[32px] font-semibold leading-10 tracking-[-0.02em]">
+        {title}
+      </h1>
+      <div className="mt-8 max-w-xl rounded-xl border border-outline-variant bg-surface-container p-6">
+        <p className="text-[13px] font-medium text-on-surface-variant">Coming soon</p>
+        <p className="mt-2 text-[15px] leading-6 text-on-surface">{detail}</p>
+      </div>
     </div>
   );
 }
@@ -31,18 +36,18 @@ export default function AppRoutes() {
         <Route
           path="new"
           element={
-            <Placeholder
+            <ComingSoon
               title="New job"
-              detail="Upload a recording, choose pipeline steps, and run the mock pipeline. This screen arrives in the next task."
+              detail="Upload, pipeline selection, and credit estimate arrive in the next build."
             />
           }
         />
         <Route
           path="jobs/:id"
           element={
-            <Placeholder
+            <ComingSoon
               title="Job detail"
-              detail="Stage progress, speaker roles, transcripts, and downloads will appear here."
+              detail="Stage progress, speaker roles, transcripts, and downloads arrive in the next build."
             />
           }
         />

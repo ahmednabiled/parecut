@@ -5,6 +5,11 @@ import type { ProfileResponse, SessionUser } from "../api/types";
 
 const FPS_OPTIONS = ["24", "25", "29.97", "30", "60"];
 
+const fieldClass =
+  "h-12 w-full rounded border border-outline bg-transparent px-4 text-[15px] text-on-surface transition-[border-color,background-color] duration-150 ease-standard hover:border-on-surface-variant focus:border-on-surface";
+
+const labelClass = "mb-2 block text-[13px] font-medium text-on-surface-variant";
+
 export default function Settings() {
   const queryClient = useQueryClient();
   const profileQuery = useQuery<ProfileResponse>({
@@ -58,111 +63,102 @@ export default function Settings() {
 
   return (
     <div className="max-w-2xl">
-      <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-signal-500">
-        Preferences
-      </p>
-      <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em]">Settings</h1>
-      <p className="mt-2 text-sm text-mist-400">
+      <h1 className="text-[32px] font-semibold leading-10 tracking-[-0.02em]">
+        Settings
+      </h1>
+      <p className="mt-2 max-w-[52ch] text-[15px] leading-6 text-on-surface-variant">
         Defaults apply to new jobs. Existing deliverables are unchanged.
       </p>
 
-      <form onSubmit={save} className="mt-8 space-y-6">
-        <section className="rounded-xl border border-ink-700 bg-ink-850 p-5">
-          <h2 className="text-sm font-medium text-mist-200">Profile</h2>
-          <div className="mt-4">
-            <label
-              htmlFor="full-name"
-              className="mb-2 block font-mono text-[10px] uppercase tracking-[0.16em] text-mist-400"
-            >
-              Full name
-            </label>
-            <input
-              id="full-name"
-              value={fullName}
-              onChange={(event) => setFullName(event.target.value)}
-              className="w-full rounded-lg border border-ink-600 bg-ink-900 px-4 py-2.5 text-sm text-mist-100 outline-none transition focus:border-signal-500 focus:ring-2 focus:ring-signal-500/20"
-            />
-          </div>
-          <p className="mt-3 text-xs text-mist-500">
-            Signed in as {profileQuery.data?.user.email ?? "…"}
-          </p>
-        </section>
-
-        <section className="rounded-xl border border-ink-700 bg-ink-850 p-5">
-          <h2 className="text-sm font-medium text-mist-200">Timeline defaults</h2>
-
-          <div className="mt-4">
-            <label
-              htmlFor="fps"
-              className="mb-2 block font-mono text-[10px] uppercase tracking-[0.16em] text-mist-400"
-            >
-              Frame rate
-            </label>
-            <select
-              id="fps"
-              value={fps}
-              onChange={(event) => setFps(event.target.value)}
-              className="w-full rounded-lg border border-ink-600 bg-ink-900 px-4 py-2.5 text-sm text-mist-100 outline-none focus:border-signal-500"
-            >
-              {FPS_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option} fps
-                </option>
-              ))}
-            </select>
-            <p className="mt-2 text-xs text-mist-500">
-              Timecodes in ROUGH-CUT.md snap to this rate.
-            </p>
-          </div>
-
-          <div className="mt-6">
-            <div className="flex items-center justify-between">
-              <label
-                htmlFor="mix"
-                className="font-mono text-[10px] uppercase tracking-[0.16em] text-mist-400"
-              >
-                Enhancement mix
+      <form onSubmit={save} className="mt-8">
+        <div className="divide-y divide-outline-variant rounded-xl border border-outline-variant bg-surface-container">
+          <section className="p-6">
+            <h2 className="text-[15px] font-medium text-on-surface">Profile</h2>
+            <div className="mt-4">
+              <label htmlFor="full-name" className={labelClass}>
+                Full name
               </label>
-              <span className="font-mono text-xs text-mist-200">{mix}%</span>
+              <input
+                id="full-name"
+                value={fullName}
+                onChange={(event) => setFullName(event.target.value)}
+                className={fieldClass}
+              />
             </div>
-            <input
-              id="mix"
-              type="range"
-              min={0}
-              max={100}
-              value={mix}
-              onChange={(event) => setMix(Number(event.target.value))}
-              className="mt-3 w-full accent-signal-500"
-            />
-          </div>
+            <p className="mt-3 text-[13px] text-on-surface-variant">
+              Signed in as {profileQuery.data?.user.email ?? "…"}
+            </p>
+          </section>
 
-          <div className="mt-6">
-            <label
-              htmlFor="pad"
-              className="mb-2 block font-mono text-[10px] uppercase tracking-[0.16em] text-mist-400"
-            >
-              Breath pad (ms)
-            </label>
-            <input
-              id="pad"
-              type="number"
-              min={0}
-              max={2000}
-              step={10}
-              value={pad}
-              onChange={(event) => setPad(Number(event.target.value))}
-              className="w-36 rounded-lg border border-ink-600 bg-ink-900 px-4 py-2.5 font-mono text-sm text-mist-100 outline-none focus:border-signal-500"
-            />
-          </div>
-        </section>
+          <section className="p-6">
+            <h2 className="text-[15px] font-medium text-on-surface">
+              Timeline defaults
+            </h2>
+
+            <div className="mt-4">
+              <label htmlFor="fps" className={labelClass}>
+                Frame rate
+              </label>
+              <select
+                id="fps"
+                value={fps}
+                onChange={(event) => setFps(event.target.value)}
+                className={fieldClass}
+              >
+                {FPS_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option} fps
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-[13px] text-on-surface-variant">
+                Timecodes in ROUGH-CUT.md snap to this rate.
+              </p>
+            </div>
+
+            <div className="mt-6">
+              <div className="flex items-center justify-between">
+                <label htmlFor="mix" className={labelClass}>
+                  Enhancement mix
+                </label>
+                <span className="font-mono text-[13px] text-on-surface">{mix}%</span>
+              </div>
+              <input
+                id="mix"
+                type="range"
+                min={0}
+                max={100}
+                value={mix}
+                onChange={(event) => setMix(Number(event.target.value))}
+                className="mt-3 w-full accent-primary"
+              />
+            </div>
+
+            <div className="mt-6">
+              <label htmlFor="pad" className={labelClass}>
+                Breath pad (ms)
+              </label>
+              <input
+                id="pad"
+                type="number"
+                min={0}
+                max={2000}
+                step={10}
+                value={pad}
+                onChange={(event) => setPad(Number(event.target.value))}
+                className="h-12 w-36 rounded border border-outline bg-transparent px-4 font-mono text-[15px] text-on-surface transition-[border-color,background-color] duration-150 ease-standard hover:border-on-surface-variant focus:border-on-surface"
+              />
+            </div>
+          </section>
+        </div>
 
         {notice ? (
-          <p className="rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+          <p className="mt-5 rounded-lg bg-surface-container-high px-4 py-3 text-sm text-on-surface">
             {notice}
           </p>
         ) : null}
         {error ? (
-          <p className="rounded-lg border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          <p className="mt-5 rounded-lg border border-error/25 bg-error-container px-4 py-3 text-sm text-on-error-container">
             {error}
           </p>
         ) : null}
@@ -170,7 +166,7 @@ export default function Settings() {
         <button
           type="submit"
           disabled={saving || profileQuery.isPending}
-          className="rounded-lg bg-signal-500 px-5 py-2.5 text-sm font-semibold text-ink-950 transition hover:bg-signal-400 disabled:cursor-not-allowed disabled:opacity-60"
+          className="mt-6 h-10 rounded-[20px] bg-primary px-5 text-sm font-semibold text-on-primary transition-colors duration-150 ease-standard hover:bg-[#dcdcdc] active:bg-[#c9c9c9] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {saving ? "Saving…" : "Save settings"}
         </button>

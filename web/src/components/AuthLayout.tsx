@@ -1,74 +1,88 @@
-import { AudioWaveform, Scissors, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
+import Icon from "./Icon";
 
 interface AuthLayoutProps {
-  eyebrow: string;
   title: string;
   subtitle: string;
   children: ReactNode;
 }
 
-export default function AuthLayout({ eyebrow, title, subtitle, children }: AuthLayoutProps) {
+const PIPELINE = [
+  ["01", "Clean", "Stationary noise, hum, and level"],
+  ["02", "Enhance", "Dereverb and voice restoration"],
+  ["03", "Separate", "Music and per-speaker stems"],
+  ["04", "Transcribe", "Word-level, speaker-attributed"],
+  ["05", "Cut", "Frame-accurate ROUGH-CUT.md"],
+];
+
+export default function AuthLayout({ title, subtitle, children }: AuthLayoutProps) {
   return (
-    <main className="min-h-screen bg-ink-950 text-mist-100">
-      <div className="mx-auto grid min-h-screen max-w-6xl lg:grid-cols-[1.05fr_0.95fr]">
-        <section className="relative hidden overflow-hidden border-r border-ink-800 px-12 py-14 lg:flex lg:flex-col lg:justify-between">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_18%,rgba(240,162,60,0.16),transparent_38%),radial-gradient(circle_at_80%_80%,rgba(240,162,60,0.06),transparent_45%)]" />
-          <div className="relative">
-            <div className="flex items-center gap-3">
-              <span className="grid size-10 place-items-center rounded-xl bg-signal-500 text-ink-950">
-                <Scissors size={19} strokeWidth={2.2} />
+    <main className="min-h-screen bg-surface text-on-surface">
+      <div className="mx-auto grid min-h-screen max-w-6xl lg:grid-cols-[1.02fr_0.98fr]">
+        <section className="hidden flex-col justify-between border-r border-outline-variant px-12 py-12 lg:flex">
+          <div className="flex items-center gap-3">
+            <span className="grid size-9 place-items-center rounded border border-outline text-on-surface">
+              <Icon name="content_cut" />
+            </span>
+            <span className="font-mono text-xs font-medium tracking-[0.28em] text-on-surface">
+              PARECUT
+            </span>
+          </div>
+
+          <div className="max-w-[34rem]">
+            <h1 className="text-[38px] font-semibold leading-[1.12] tracking-[-0.02em]">
+              Clean audio in.
+              <br />
+              A frame-accurate cut out.
+            </h1>
+            <p className="mt-5 max-w-sm text-[15px] leading-7 text-on-surface-variant">
+              One modular pipeline takes a difficult recording from raw microphone
+              audio to stems, a speaker-attributed transcript, and an exact
+              keep/remove specification.
+            </p>
+
+            <ol className="mt-10 divide-y divide-outline-variant border-y border-outline-variant">
+              {PIPELINE.map(([index, name, detail]) => (
+                <li
+                  key={index}
+                  className="grid grid-cols-[2.5rem_1fr] items-baseline gap-3 py-3"
+                >
+                  <span className="font-mono text-[12px] text-on-surface-variant">
+                    {index}
+                  </span>
+                  <span>
+                    <span className="text-sm font-medium text-on-surface">{name}</span>
+                    <span className="ml-2 text-[13px] text-on-surface-variant">
+                      {detail}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </div>
+
+          <p className="text-[13px] text-on-surface-variant">
+            AI audio engineering and rough-cut preparation.
+          </p>
+        </section>
+
+        <section className="flex items-center justify-center px-6 py-12 sm:px-10">
+          <div className="w-full max-w-md">
+            <div className="mb-10 flex items-center gap-3 lg:hidden">
+              <span className="grid size-9 place-items-center rounded border border-outline text-on-surface">
+                <Icon name="content_cut" />
               </span>
-              <span className="font-mono text-sm font-semibold tracking-[0.28em] text-mist-100">
+              <span className="font-mono text-xs font-medium tracking-[0.26em]">
                 PARECUT
               </span>
             </div>
 
-            <h1 className="mt-20 max-w-md text-4xl font-semibold leading-[1.08] tracking-[-0.03em] text-mist-100">
-              The rough cut starts with clean audio.
-            </h1>
-            <p className="mt-5 max-w-sm text-[15px] leading-7 text-mist-400">
-              Denoise, enhance, split speakers, and turn a messy shoot into a
-              frame-accurate edit plan your NLE agent can execute.
-            </p>
-
-            <ul className="mt-10 space-y-4 text-sm text-mist-200">
-              <li className="flex items-center gap-3">
-                <AudioWaveform size={17} className="text-signal-500" />
-                Studio-clean stems from a single microphone
-              </li>
-              <li className="flex items-center gap-3">
-                <Sparkles size={17} className="text-signal-500" />
-                Speaker-attributed, word-aligned transcripts
-              </li>
-              <li className="flex items-center gap-3">
-                <Scissors size={17} className="text-signal-500" />
-                Keep/remove ranges ready for Resolve and Premiere
-              </li>
-            </ul>
-          </div>
-
-          <p className="relative font-mono text-[11px] uppercase tracking-[0.18em] text-mist-400">
-            AI audio engineering · rough-cut prep
-          </p>
-        </section>
-
-        <section className="flex items-center justify-center px-6 py-14 sm:px-10">
-          <div className="w-full max-w-md">
-            <div className="mb-10 flex items-center gap-3 lg:hidden">
-              <span className="grid size-9 place-items-center rounded-lg bg-signal-500 text-ink-950">
-                <Scissors size={17} strokeWidth={2.2} />
-              </span>
-              <span className="font-mono text-xs font-semibold tracking-[0.28em]">PARECUT</span>
-            </div>
-
-            <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-signal-500">
-              {eyebrow}
-            </p>
-            <h2 className="mt-3 text-3xl font-semibold tracking-[-0.025em] text-mist-100">
+            <h2 className="text-[32px] font-semibold leading-10 tracking-[-0.02em]">
               {title}
             </h2>
-            <p className="mt-3 text-sm leading-6 text-mist-400">{subtitle}</p>
+            <p className="mt-3 max-w-sm text-[15px] leading-6 text-on-surface-variant">
+              {subtitle}
+            </p>
 
             <div className="mt-9">{children}</div>
           </div>

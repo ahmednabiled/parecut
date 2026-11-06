@@ -8,7 +8,7 @@ describe("format helpers", () => {
   });
 
   it("formats unknown durations and byte sizes", () => {
-    expect(formatDuration(null)).toBe("—");
+    expect(formatDuration(null)).toBe("Unknown");
     expect(formatFileSize(1536)).toBe("1.5 KB");
   });
 });

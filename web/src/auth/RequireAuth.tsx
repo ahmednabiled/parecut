@@ -1,4 +1,3 @@
-import { LoaderCircle } from "lucide-react";
 import type { ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "./AuthProvider";
@@ -9,8 +8,8 @@ export default function RequireAuth({ children }: { children: ReactNode }) {
 
   if (isLoading) {
     return (
-      <div className="grid min-h-screen place-items-center bg-ink-950 text-signal-500">
-        <LoaderCircle size={22} className="animate-spin" />
+      <div className="grid min-h-screen place-items-center bg-surface">
+        <span className="spinner" role="status" aria-label="Loading" />
       </div>
     );
   }

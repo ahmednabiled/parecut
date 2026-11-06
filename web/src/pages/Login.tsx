@@ -35,15 +35,14 @@ export default function Login() {
 
   return (
     <AuthLayout
-      eyebrow="Welcome back"
       title="Sign in to Parecut"
-      subtitle="Your cuts, stems, and transcripts are waiting."
+      subtitle="Your jobs, stems, and cut specifications are waiting."
     >
       <form onSubmit={submit} className="space-y-5" noValidate>
         <div>
           <label
             htmlFor="email"
-            className="mb-2 block font-mono text-[10px] uppercase tracking-[0.18em] text-mist-400"
+            className="mb-2 block text-[13px] font-medium text-on-surface-variant"
           >
             Email
           </label>
@@ -54,14 +53,14 @@ export default function Login() {
             autoComplete="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            className="w-full rounded-lg border border-ink-600 bg-ink-900 px-4 py-3 text-sm text-mist-100 outline-none transition focus:border-signal-500 focus:ring-2 focus:ring-signal-500/20"
+            className="h-12 w-full rounded border border-outline bg-transparent px-4 text-[15px] text-on-surface transition-[border-color,background-color] duration-150 ease-standard hover:border-on-surface-variant focus:border-on-surface"
           />
         </div>
 
         <div>
           <label
             htmlFor="password"
-            className="mb-2 block font-mono text-[10px] uppercase tracking-[0.18em] text-mist-400"
+            className="mb-2 block text-[13px] font-medium text-on-surface-variant"
           >
             Password
           </label>
@@ -72,14 +71,14 @@ export default function Login() {
             autoComplete="current-password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            className="w-full rounded-lg border border-ink-600 bg-ink-900 px-4 py-3 text-sm text-mist-100 outline-none transition focus:border-signal-500 focus:ring-2 focus:ring-signal-500/20"
+            className="h-12 w-full rounded border border-outline bg-transparent px-4 text-[15px] text-on-surface transition-[border-color,background-color] duration-150 ease-standard hover:border-on-surface-variant focus:border-on-surface"
           />
         </div>
 
         {error ? (
           <p
             role="alert"
-            className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200"
+            className="rounded-lg border border-error/25 bg-error-container px-4 py-3 text-sm text-on-error-container"
           >
             {error}
           </p>
@@ -88,15 +87,18 @@ export default function Login() {
         <button
           type="submit"
           disabled={pending}
-          className="w-full rounded-lg bg-signal-500 px-4 py-3 text-sm font-semibold text-ink-950 transition hover:bg-signal-400 disabled:cursor-not-allowed disabled:opacity-60"
+          className="h-11 w-full rounded-[20px] bg-primary px-6 text-sm font-semibold text-on-primary transition-colors duration-150 ease-standard hover:bg-[#dcdcdc] active:bg-[#c9c9c9] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {pending ? "Signing in…" : "Sign in"}
         </button>
       </form>
 
-      <p className="mt-7 text-sm text-mist-400">
+      <p className="mt-7 text-sm text-on-surface-variant">
         New to Parecut?{" "}
-        <Link to="/register" className="font-medium text-signal-500 hover:text-signal-400">
+        <Link
+          to="/register"
+          className="font-medium text-on-surface underline decoration-outline underline-offset-4 transition-colors duration-150 ease-standard hover:decoration-on-surface"
+        >
           Create an account
         </Link>
       </p>

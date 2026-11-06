@@ -25,7 +25,7 @@ export function formatFileSize(bytes: number): string {
 
 export function formatDuration(seconds: number | null): string {
   if (seconds === null || Number.isNaN(seconds)) {
-    return "—";
+    return "Unknown";
   }
   const whole = Math.round(seconds);
   if (whole < 60) {

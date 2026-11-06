@@ -39,7 +39,6 @@ export default function Register() {
 
   return (
     <AuthLayout
-      eyebrow="Get started"
       title="Create your workspace"
       subtitle="Thirty minutes of processing are included. No card required."
     >
@@ -47,7 +46,7 @@ export default function Register() {
         <div>
           <label
             htmlFor="full-name"
-            className="mb-2 block font-mono text-[10px] uppercase tracking-[0.18em] text-mist-400"
+            className="mb-2 block text-[13px] font-medium text-on-surface-variant"
           >
             Full name
           </label>
@@ -57,14 +56,14 @@ export default function Register() {
             autoComplete="name"
             value={fullName}
             onChange={(event) => setFullName(event.target.value)}
-            className="w-full rounded-lg border border-ink-600 bg-ink-900 px-4 py-3 text-sm text-mist-100 outline-none transition focus:border-signal-500 focus:ring-2 focus:ring-signal-500/20"
+            className="h-12 w-full rounded border border-outline bg-transparent px-4 text-[15px] text-on-surface transition-[border-color,background-color] duration-150 ease-standard hover:border-on-surface-variant focus:border-on-surface"
           />
         </div>
 
         <div>
           <label
             htmlFor="email"
-            className="mb-2 block font-mono text-[10px] uppercase tracking-[0.18em] text-mist-400"
+            className="mb-2 block text-[13px] font-medium text-on-surface-variant"
           >
             Email
           </label>
@@ -75,14 +74,14 @@ export default function Register() {
             autoComplete="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            className="w-full rounded-lg border border-ink-600 bg-ink-900 px-4 py-3 text-sm text-mist-100 outline-none transition focus:border-signal-500 focus:ring-2 focus:ring-signal-500/20"
+            className="h-12 w-full rounded border border-outline bg-transparent px-4 text-[15px] text-on-surface transition-[border-color,background-color] duration-150 ease-standard hover:border-on-surface-variant focus:border-on-surface"
           />
         </div>
 
         <div>
           <label
             htmlFor="password"
-            className="mb-2 block font-mono text-[10px] uppercase tracking-[0.18em] text-mist-400"
+            className="mb-2 block text-[13px] font-medium text-on-surface-variant"
           >
             Password
           </label>
@@ -94,15 +93,15 @@ export default function Register() {
             autoComplete="new-password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            className="w-full rounded-lg border border-ink-600 bg-ink-900 px-4 py-3 text-sm text-mist-100 outline-none transition focus:border-signal-500 focus:ring-2 focus:ring-signal-500/20"
+            className="h-12 w-full rounded border border-outline bg-transparent px-4 text-[15px] text-on-surface transition-[border-color,background-color] duration-150 ease-standard hover:border-on-surface-variant focus:border-on-surface"
           />
-          <p className="mt-2 text-xs text-mist-400">At least 8 characters.</p>
+          <p className="mt-2 text-xs text-on-surface-variant">At least 8 characters.</p>
         </div>
 
         {error ? (
           <p
             role="alert"
-            className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200"
+            className="rounded-lg border border-error/25 bg-error-container px-4 py-3 text-sm text-on-error-container"
           >
             {error}
           </p>
@@ -111,15 +110,18 @@ export default function Register() {
         <button
           type="submit"
           disabled={pending}
-          className="w-full rounded-lg bg-signal-500 px-4 py-3 text-sm font-semibold text-ink-950 transition hover:bg-signal-400 disabled:cursor-not-allowed disabled:opacity-60"
+          className="h-11 w-full rounded-[20px] bg-primary px-6 text-sm font-semibold text-on-primary transition-colors duration-150 ease-standard hover:bg-[#dcdcdc] active:bg-[#c9c9c9] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {pending ? "Creating account…" : "Create account"}
         </button>
       </form>
 
-      <p className="mt-7 text-sm text-mist-400">
+      <p className="mt-7 text-sm text-on-surface-variant">
         Already have an account?{" "}
-        <Link to="/login" className="font-medium text-signal-500 hover:text-signal-400">
+        <Link
+          to="/login"
+          className="font-medium text-on-surface underline decoration-outline underline-offset-4 transition-colors duration-150 ease-standard hover:decoration-on-surface"
+        >
           Sign in
         </Link>
       </p>

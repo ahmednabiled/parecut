@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowUpRight, AudioLines, FileAudio, Plus } from "lucide-react";
 import { Link } from "react-router-dom";
 import { apiFetch } from "../api/client";
 import type { ProfileResponse } from "../api/types";
+import { useAuth } from "../auth/AuthProvider";
 import StatusPill from "../components/StatusPill";
 import { formatDuration } from "../lib/format";
 
@@ -16,132 +16,120 @@ function formatDate(value: string): string {
 }
 
 export default function Dashboard() {
+  const { me } = useAuth();
   const profileQuery = useQuery<ProfileResponse>({
     queryKey: ["profile"],
     queryFn: () => apiFetch<ProfileResponse>("/api/profile"),
   });
 
   const jobs = profileQuery.data?.jobs ?? [];
-  const balance = profileQuery.data?.profile.credit_balance_minutes ?? 0;
+  const balance =
+    profileQuery.data?.profile.credit_balance_minutes ??
+    me?.profile.credit_balance_minutes ??
+    0;
+  const deliverables = jobs.reduce((total, job) => total + job.artifacts.length, 0);
 
   return (
     <div>
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-signal-500">
-            Workspace
-          </p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em]">Dashboard</h1>
-          <p className="mt-2 text-sm text-mist-400">
-            Your recent audio jobs and the deliverables they produced.
+          <h1 className="text-[32px] font-semibold leading-10 tracking-[-0.02em]">
+            Dashboard
+          </h1>
+          <p className="mt-2 max-w-[52ch] text-[15px] leading-6 text-on-surface-variant">
+            Recent audio jobs and the deliverables they produced.
           </p>
         </div>
         <Link
           to="/new"
-          className="inline-flex items-center gap-2 rounded-lg bg-signal-500 px-4 py-2.5 text-sm font-semibold text-ink-950 transition hover:bg-signal-400"
+          className="inline-flex h-10 items-center rounded-[20px] bg-primary px-5 text-sm font-semibold text-on-primary transition-colors duration-150 ease-standard hover:bg-[#dcdcdc] active:bg-[#c9c9c9]"
         >
-          <Plus size={16} />
           New job
         </Link>
       </div>
 
-      <div className="mt-8 grid gap-4 sm:grid-cols-3">
-        <section className="rounded-xl border border-ink-700 bg-ink-850 p-5">
-          <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-mist-400">
-            <AudioLines size={13} className="text-signal-500" />
-            Processing credits
+      <section className="mt-8 overflow-hidden rounded-xl border border-outline-variant bg-surface-container">
+        <div className="grid lg:grid-cols-[1.45fr_1fr]">
+          <div className="p-6">
+            <p className="text-[13px] text-on-surface-variant">Processing credits</p>
+            <p className="mt-2 font-mono text-[40px] font-medium leading-none tracking-[-0.03em]">
+              {balance.toFixed(1)}
+              <span className="ml-2 font-sans text-sm font-normal text-on-surface-variant">
+                minutes
+              </span>
+            </p>
+            <p className="mt-4 max-w-[46ch] text-[13px] leading-5 text-on-surface-variant">
+              Charges are reserved when a job starts and refunded if it fails.
+            </p>
           </div>
-          <p className="mt-3 text-3xl font-semibold tracking-tight">
-            {balance.toFixed(1)}
-            <span className="ml-1 text-sm font-normal text-mist-400">minutes</span>
-          </p>
-          <p className="mt-2 text-xs text-mist-500">
-            Charges are reserved when a job starts and refunded if it fails.
-          </p>
-        </section>
 
-        <section className="rounded-xl border border-ink-700 bg-ink-850 p-5">
-          <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-mist-400">
-            Jobs
-          </div>
-          <p className="mt-3 text-3xl font-semibold tracking-tight">{jobs.length}</p>
-          <p className="mt-2 text-xs text-mist-500">Most recent ten jobs are shown.</p>
-        </section>
-
-        <section className="rounded-xl border border-ink-700 bg-ink-850 p-5">
-          <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-mist-400">
-            Deliverables
-          </div>
-          <p className="mt-3 text-3xl font-semibold tracking-tight">
-            {jobs.reduce((total, job) => total + job.artifacts.length, 0)}
-          </p>
-          <p className="mt-2 text-xs text-mist-500">
-            Stems, transcripts, and rough-cut specs available.
-          </p>
-        </section>
-      </div>
+          <dl className="divide-y divide-outline-variant border-t border-outline-variant px-6 lg:border-l lg:border-t-0">
+            <div className="flex items-baseline justify-between py-4">
+              <dt className="text-[13px] text-on-surface-variant">Jobs</dt>
+              <dd className="font-mono text-lg text-on-surface">
+                {profileQuery.isPending ? "..." : jobs.length}
+              </dd>
+            </div>
+            <div className="flex items-baseline justify-between py-4">
+              <dt className="text-[13px] text-on-surface-variant">Deliverables</dt>
+              <dd className="font-mono text-lg text-on-surface">
+                {profileQuery.isPending ? "..." : deliverables}
+              </dd>
+            </div>
+          </dl>
+        </div>
+      </section>
 
       <section className="mt-10">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium text-mist-200">Recent jobs</h2>
-          {profileQuery.isFetching ? (
-            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-mist-500">
-              Syncing…
-            </span>
-          ) : null}
-        </div>
+        <h2 className="text-[22px] font-medium leading-7 tracking-[-0.01em]">
+          Recent jobs
+        </h2>
 
         {profileQuery.isPending ? (
-          <div className="mt-4 space-y-2">
-            {[0, 1, 2].map((row) => (
-              <div key={row} className="h-[72px] animate-pulse rounded-xl bg-ink-850" />
-            ))}
-          </div>
+          <p className="mt-4 flex items-center gap-2 text-[13px] text-on-surface-variant">
+            <span className="spinner" aria-hidden="true" />
+            Loading jobs
+          </p>
         ) : profileQuery.isError ? (
-          <p className="mt-4 rounded-xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          <p className="mt-4 rounded-lg border border-error/25 bg-error-container px-4 py-3 text-sm text-on-error-container">
             Could not load your jobs. Refresh to try again.
           </p>
         ) : jobs.length === 0 ? (
-          <div className="mt-4 rounded-xl border border-dashed border-ink-600 bg-ink-900/40 px-6 py-12 text-center">
-            <FileAudio size={26} className="mx-auto text-mist-500" />
-            <h3 className="mt-4 text-sm font-medium text-mist-200">No jobs yet</h3>
-            <p className="mx-auto mt-2 max-w-sm text-sm text-mist-400">
-              Upload a recording to create your first clean stems and rough-cut
-              specification.
+          <div className="mt-4 rounded-xl border border-outline-variant bg-surface-container-low px-6 py-10">
+            <h3 className="text-[15px] font-medium text-on-surface">No jobs yet</h3>
+            <p className="mt-2 max-w-[52ch] text-[14px] leading-6 text-on-surface-variant">
+              Upload a recording to create clean stems, a speaker-attributed
+              transcript, and a rough-cut specification.
             </p>
             <Link
               to="/new"
-              className="mt-5 inline-flex items-center gap-2 rounded-lg border border-ink-600 px-4 py-2 text-sm text-mist-200 transition hover:border-signal-500/50 hover:text-mist-100"
+              className="mt-5 inline-flex h-10 items-center rounded-[20px] border border-outline px-5 text-sm font-medium text-on-surface transition-colors duration-150 ease-standard hover:bg-surface-container-high"
             >
-              <Plus size={15} />
               Create a job
             </Link>
           </div>
         ) : (
-          <div className="mt-4 overflow-hidden rounded-xl border border-ink-700">
-            {jobs.map((job) => (
+          <div className="mt-4 overflow-hidden rounded-xl border border-outline-variant bg-surface-container">
+            {jobs.map((job, index) => (
               <Link
                 key={job.id}
                 to={`/jobs/${job.id}`}
-                className="group flex items-center gap-4 border-b border-ink-800 bg-ink-900/40 px-4 py-4 transition last:border-b-0 hover:bg-ink-850"
+                className="grid grid-cols-[2rem_1fr_auto] items-center gap-4 border-b border-outline-variant px-4 py-4 transition-colors duration-150 ease-standard last:border-b-0 hover:bg-surface-container-high"
               >
-                <span className="grid size-10 shrink-0 place-items-center rounded-lg border border-ink-700 bg-ink-800 text-mist-400">
-                  <FileAudio size={17} />
+                <span className="font-mono text-[12px] text-on-surface-variant">
+                  {String(index + 1).padStart(2, "0")}
                 </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-mist-100">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-on-surface">
                     {job.source_filename}
                   </p>
-                  <p className="mt-1 truncate font-mono text-[11px] text-mist-500">
+                  <p className="mt-1 truncate font-mono text-[12px] text-on-surface-variant">
                     {job.fps} fps · {formatDuration(job.duration_seconds)} ·{" "}
-                    {job.artifacts.length} files · {formatDate(job.created_at)}
+                    {job.artifacts.length} files
+                    <span className="hidden sm:inline"> · {formatDate(job.created_at)}</span>
                   </p>
                 </div>
                 <StatusPill status={job.status} />
-                <ArrowUpRight
-                  size={16}
-                  className="hidden text-mist-500 transition group-hover:text-signal-500 sm:block"
-                />
               </Link>
             ))}
           </div>
