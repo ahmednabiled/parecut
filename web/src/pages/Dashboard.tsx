@@ -31,6 +31,14 @@ export default function Dashboard() {
 
   return (
     <div>
+      <div className="mb-8 overflow-hidden rounded-xl border border-outline-variant">
+        <img
+          src="/brand/cover.webp"
+          alt="Pare Cut"
+          className="h-40 w-full object-cover object-center sm:h-48"
+        />
+      </div>
+
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-[32px] font-semibold leading-10 tracking-[-0.02em]">

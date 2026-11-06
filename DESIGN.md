@@ -89,8 +89,8 @@ metrics, and settings sections do not need decoration.
 Owner-supplied profile assets, self-hosted in `web/public/brand/`:
 
 - `logo.png` — the P mark, black removed, used in the brand lockup everywhere.
-- `cover.webp` — the profile cover, grayscale, used once as the brand band at the
-  bottom of the auth panel. Hidden below 960 px viewport height.
+- `cover.webp` — the profile cover in its original colors, used once as the
+  dashboard banner above the page content.
 - `favicon.png` — the P mark on a surface-colored square.
 
 The cover is never used as a page background and never tinted. The logo is never
