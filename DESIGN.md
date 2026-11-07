@@ -88,7 +88,9 @@ metrics, and settings sections do not need decoration.
 
 Owner-supplied profile assets, self-hosted in `web/public/brand/`:
 
-- `logo.png` — the P mark, black removed, used in the brand lockup everywhere.
+- `logo.png` — the P mark, black removed, used in the app chrome lockup.
+- `login-logo.png` — the full Pare Cut script mark, used on auth pages with no
+  separate wordmark beside it.
 - `cover.webp` — the profile cover in its original colors, used once as the
   dashboard banner above the page content.
 - `favicon.png` — the P mark on a surface-colored square.

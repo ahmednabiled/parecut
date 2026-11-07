@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import Brand from "./Brand";
 
 interface AuthLayoutProps {
   title: string;
@@ -20,7 +19,11 @@ export default function AuthLayout({ title, subtitle, children }: AuthLayoutProp
     <main className="min-h-screen bg-surface text-on-surface">
       <div className="mx-auto grid min-h-screen max-w-6xl lg:grid-cols-[1.02fr_0.98fr]">
         <section className="hidden flex-col justify-between border-r border-outline-variant px-12 py-12 lg:flex">
-          <Brand size="lg" />
+          <img
+            src="/brand/login-logo.png"
+            alt="Pare Cut"
+            className="h-24 w-auto self-start"
+          />
 
           <div className="max-w-[34rem]">
             <h1 className="text-[38px] font-semibold leading-[1.12] tracking-[-0.02em]">
@@ -62,7 +65,7 @@ export default function AuthLayout({ title, subtitle, children }: AuthLayoutProp
         <section className="flex items-center justify-center px-6 py-12 sm:px-10">
           <div className="w-full max-w-md">
             <div className="mb-10 lg:hidden">
-              <Brand />
+              <img src="/brand/login-logo.png" alt="Pare Cut" className="h-16 w-auto" />
             </div>
 
             <h2 className="text-[32px] font-semibold leading-10 tracking-[-0.02em]">
