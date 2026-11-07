@@ -38,7 +38,7 @@ export default function AppShell() {
   return (
     <div className="flex min-h-screen bg-surface text-on-surface">
       <aside className="hidden w-60 shrink-0 flex-col border-r border-outline-variant bg-surface-container-low px-3 py-5 lg:flex">
-        <NavLink to="/" className="flex justify-center px-2 py-1">
+        <NavLink to="/" className="px-2 py-1">
           <img src="/brand/login-logo.png" alt="Pare Cut" className="h-14 w-auto" />
         </NavLink>
 
