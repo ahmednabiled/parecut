@@ -3,7 +3,6 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { apiFetch } from "../api/client";
 import type { ProfileResponse } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
-import Brand from "./Brand";
 import Icon, { type IconName } from "./Icon";
 
 const NAV: { to: string; label: string; icon: IconName; end: boolean }[] = [
@@ -40,7 +39,7 @@ export default function AppShell() {
     <div className="flex min-h-screen bg-surface text-on-surface">
       <aside className="hidden w-60 shrink-0 flex-col border-r border-outline-variant bg-surface-container-low px-3 py-5 lg:flex">
         <NavLink to="/" className="px-2 py-1">
-          <Brand />
+          <img src="/brand/login-logo.png" alt="Pare Cut" className="h-14 w-auto" />
         </NavLink>
 
         <nav className="mt-8 space-y-1">
@@ -101,7 +100,7 @@ export default function AppShell() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-outline-variant px-5 py-4 lg:hidden">
-          <Brand />
+          <img src="/brand/login-logo.png" alt="Pare Cut" className="h-12 w-auto" />
           <div className="flex items-center gap-2">
             <span className="font-mono text-[12px] text-on-surface-variant">
               {balance.toFixed(1)} min
