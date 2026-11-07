@@ -6,13 +6,7 @@ interface AuthLayoutProps {
   children: ReactNode;
 }
 
-const PIPELINE = [
-  ["01", "Clean", "Stationary noise, hum, and level"],
-  ["02", "Enhance", "Dereverb and voice restoration"],
-  ["03", "Separate", "Music and per-speaker stems"],
-  ["04", "Transcribe", "Word-level, speaker-attributed"],
-  ["05", "Cut", "Frame-accurate ROUGH-CUT.md"],
-];
+const PIPELINE = ["Clean", "Enhance", "Separate", "Transcribe", "Cut"];
 
 export default function AuthLayout({ title, subtitle, children }: AuthLayoutProps) {
   return (
@@ -37,21 +31,16 @@ export default function AuthLayout({ title, subtitle, children }: AuthLayoutProp
               keep/remove specification.
             </p>
 
-            <ol className="mt-10 divide-y divide-outline-variant border-y border-outline-variant">
-              {PIPELINE.map(([index, name, detail]) => (
-                <li
-                  key={index}
-                  className="grid grid-cols-[2.5rem_1fr] items-baseline gap-3 py-3"
-                >
-                  <span className="font-mono text-[12px] text-on-surface-variant">
-                    {index}
-                  </span>
-                  <span>
-                    <span className="text-sm font-medium text-on-surface">{name}</span>
-                    <span className="ml-2 text-[13px] text-on-surface-variant">
-                      {detail}
-                    </span>
-                  </span>
+            <ol aria-label="Processing pipeline" className="mt-10 grid grid-cols-5">
+              {PIPELINE.map((name, index) => (
+                <li key={name} className="flex flex-col">
+                  <div className="flex items-center">
+                    <span className="size-[7px] shrink-0 rounded-full bg-on-surface" />
+                    {index < PIPELINE.length - 1 ? (
+                      <span className="h-px flex-1 bg-outline-variant" />
+                    ) : null}
+                  </div>
+                  <span className="mt-3 text-[12px] text-on-surface-variant">{name}</span>
                 </li>
               ))}
             </ol>
