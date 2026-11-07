@@ -1,6 +1,9 @@
 [project]
 name = "parecut"
 version = "0.1.0"
+description = "AI audio engineering and rough-cut preparation"
+license = "Apache-2.0"
+authors = [{ name = "Ahmed Nabil" }]
 requires-python = ">=3.12"
 dependencies = [
     "aiosqlite>=0.22.1",
