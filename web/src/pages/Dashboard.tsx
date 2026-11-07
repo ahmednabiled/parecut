@@ -54,7 +54,7 @@ export default function Dashboard() {
             <p className="text-[13px] text-on-surface-variant">Processing credits</p>
             <p className="mt-2 font-mono text-[40px] font-medium leading-none tracking-[-0.03em]">
               {balance.toFixed(1)}
-              <span className="ml-2 font-sans text-sm font-normal text-on-surface-variant">
+              <span className="ml-2 font-sans text-sm font-normal tracking-normal text-on-surface-variant">
                 minutes
               </span>
             </p>

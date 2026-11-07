@@ -70,7 +70,7 @@ export default function AppShell() {
             </div>
             <p className="mt-2 font-mono text-2xl font-medium tracking-tight text-on-surface">
               {balance.toFixed(1)}
-              <span className="ml-1.5 font-sans text-xs font-normal text-on-surface-variant">
+              <span className="ml-2 font-sans text-xs font-normal tracking-normal text-on-surface-variant">
                 minutes
               </span>
             </p>
