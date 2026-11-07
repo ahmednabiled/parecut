@@ -31,12 +31,12 @@ Phase 1 builds that shell end to end, with every third-party dependency replaced
 
 ### Explicit non-goals (Phase 1)
 
-- Modal, R2/S3, Redis, LLM providers, Stripe, OAuth, email delivery.
+- RunPod, R2/S3, Redis, LLM providers, Stripe, OAuth, email delivery.
 - Real DSP, enhancement, separation, diarization, transcription, or cut analysis.
 - Email verification, password reset, account deletion.
 - Multi-worker deployment, rate limiting, observability stack, retention sweep.
 - Native NLE plugins or desktop client.
-- `modal_app/` is not created until there is a Modal stage to run.
+- `runpod_app/` is not created until there is a RunPod stage to run.
 
 ### Anti-goals
 
@@ -144,7 +144,7 @@ class PipelineRunner(Protocol):
     async def spawn(self, job_id: str) -> None: ...
 ```
 
-Swapping R2 → `R2ObjectStorage`, Redis → `RedisEventBroker`, Modal → `ModalPipelineRunner` must not require changes to routers or UI.
+Swapping R2 → `R2ObjectStorage`, Redis → `RedisEventBroker`, RunPod → `RunPodPipelineRunner` must not require changes to routers or UI.
 
 ### 5.3 Data model
 
@@ -260,7 +260,7 @@ On startup when `SEED_DEMO=true` (default in dev): create the demo user if absen
 
 1. **Rough-cut engine (no third-party):** real timecode conversion for all FPS values, transcript schema + alignment ingestion, rule pass, before/after renderers, and `ROUGH-CUT.md` from real transcripts.
 2. **Local audio ingest + Stage 1 DSP (local libraries):** ffmpeg/ffprobe metadata, WAV normalization, high-pass, notch, spectral gate, loudness normalization, sample-exact output.
-3. **Modal GPU stages:** enhancement, music/speaker separation, transcription; real `PipelineRunner`, HMAC webhook, Redis broker, artifact retention.
+3. **RunPod GPU stages:** enhancement, music/speaker separation, transcription; real `PipelineRunner`, HMAC callback, Redis broker, artifact retention.
 4. **R2 storage:** presigned browser uploads/downloads, lifecycle rules.
 5. **LLM take selection:** provider abstraction, retake grouping, best-take scoring, cost controls.
 6. **Commercial surface:** Stripe top-ups, OAuth, email flows, rate limits, observability, retention sweep.

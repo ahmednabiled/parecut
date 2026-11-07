@@ -6,12 +6,13 @@
 
 | | |
 |---|---|
-| **Document version** | 3.0 (v1 Web-First Release Scope) |
+| **Document version** | 3.1 (RunPod GPU provider update) |
 | **Supersedes** | v1.0, v1.1, v2.0 |
 | **Date** | 2026-11-05 |
+| **Last updated** | 2026-11-07 |
 | **Status** | Ready for implementation |
 | **Release Scope** | v1: All-in-one Cloud SaaS · v2 (Future): Open-source local client & live NLE plugins |
-| **Primary Stack** | Python (FastAPI + SQLAlchemy/SQLModel + Pydantic) + Modal Serverless GPUs |
+| **Primary Stack** | Python (FastAPI + SQLAlchemy/SQLModel + Pydantic) + RunPod Serverless GPUs |
 
 ---
 
@@ -24,10 +25,14 @@ Previous iterations (v1.x–v2.0) coupled the initial launch with a heavy deskto
 | Area | v2.0 (Previous) | v3.0 (Current v1 Scope) |
 |---|---|---|
 | **Primary Deliverable** | Cloud SaaS + Tauri Desktop Client + NLE Plugins | **All-in-one Web Application** (Auth, Profile, Pipeline, Downloads) |
-| **Backend Stack** | Next.js / TypeScript / tRPC / Drizzle | **FastAPI (Python 3.12)** — unified language with Modal and AI audio tooling |
+| **Backend Stack** | Next.js / TypeScript / tRPC / Drizzle | **FastAPI (Python 3.12)** — unified language with RunPod and AI audio tooling |
 | **Rough-Cut Delivery** | Live NLE IPC/WebSockets & OTIO plugins | **Rough-Cut Specification (`ROUGH-CUT.md`)** with exact In/Out timecodes & agent instructions, ready to hand to any coding agent (Claude Code, Codex, Cursor) to generate Resolve/Premiere scripts |
 | **Downloadable Artifacts** | Stems + single transcript | **Enhanced audio, isolated stems (music + per-speaker), raw transcript (before cut), trimmed transcript (after cut), and `ROUGH-CUT.md`** |
 | **Desktop Client & Offline** | In v1 | **Deferred to v2** (the Python `parecut-engine` is structured cleanly so v2 can wrap it later) |
+
+### 0.2 GPU Provider Update (2026-11-07)
+
+GPU inference will run on **RunPod Serverless**, not Modal. The architecture, schema field names, webhook path, and deployment notes below reflect RunPod. The Phase 1 web shell and mock pipeline are unaffected. The decision record is `docs/adr/0001-runpod-gpu-inference.md`.
 
 ---
 
@@ -64,7 +69,7 @@ flowchart TD
   B --> C["3. Upload Audio File<br/>(WAV, MP3, FLAC, M4A, or audio from video)"]
   C --> D["4. Configure Pipeline<br/>(Select individual tools OR full pipeline)"]
 
-  subgraph Pipeline["5. Cloud Processing on Modal"]
+  subgraph Pipeline["5. Cloud Processing on RunPod"]
     D --> E1["Step 1: Noise Reduction (DSP)"]
     E1 --> E2["Step 2: AI Audio Enhancement (Adobe Podcast style)"]
     E2 --> E3["Step 3: Stem & Multi-Speaker Separation<br/>(Music + Speaker A, Speaker B...)"]
@@ -115,10 +120,10 @@ flowchart TD
 
 ### 3.1 Why FastAPI + Python End-to-End?
 
-Because the core audio processing, AI orchestration (Modal), DSP (librosa/pedalboard/ffmpeg), and LLM rough-cut logic are all Python, building the web backend in **FastAPI** eliminates language boundaries:
+Because the core audio processing, AI orchestration (RunPod), DSP (librosa/pedalboard/ffmpeg), and LLM rough-cut logic are all Python, building the web backend in **FastAPI** eliminates language boundaries:
 
-- **Single language (`Python 3.12`)** across web API, database models, background tasks, and Modal GPU workers.
-- **Shared Pydantic schemas** between FastAPI endpoints, database JSON columns, and Modal function inputs/outputs — zero codegen or TypeScript/Python drift.
+- **Single language (`Python 3.12`)** across web API, database models, background tasks, and RunPod GPU workers.
+- **Shared Pydantic schemas** between FastAPI endpoints, database JSON columns, and RunPod worker inputs/outputs — zero codegen or TypeScript/Python drift.
 - **Faster iteration** for a solo/Python-focused builder.
 
 ### 3.2 Technology Stack Table
@@ -131,8 +136,8 @@ Because the core audio processing, AI orchestration (Modal), DSP (librosa/pedalb
 | **Cache & Realtime** | **Redis** | Worker progress heartbeats, SSE pub/sub, rate limiting |
 | **Authentication** | **FastAPI Users / Authlib (JWT + Session Cookies + OAuth)** | Login, signup, profile management, password reset |
 | **Object Storage** | **Cloudflare R2 (boto3 S3 client)** | Zero-egress storage for uploaded audio, stems, transcripts, and `.md` exports |
-| **Serverless GPU** | **Modal (`modal` Python SDK)** | Native Python function invocation (`Function.spawn`) from FastAPI |
-| **Audio & AI Runtime** | **PyTorch, CUDA 12.x, ffmpeg, Pedalboard / DeepFilterNet / Demucs / Pyannote / MossFormer2 / Whisper** | Runs inside Modal containers via shared `parecut_engine` package |
+| **Serverless GPU** | **RunPod Serverless (`runpod` Python SDK + REST API)** | Endpoint invocation (`/run` + `/status`) from FastAPI; GPU type configured per endpoint |
+| **Audio & AI Runtime** | **PyTorch, CUDA 12.x, ffmpeg, Pedalboard / DeepFilterNet / Demucs / Pyannote / MossFormer2 / Whisper** | Runs inside RunPod worker images via shared `parecut_engine` package |
 | **Rough-Cut LLM** | **LiteLLM / OpenAI / Anthropic Python SDK** | Runs inside FastAPI (or CPU worker) to analyze speaker-attributed transcripts and emit `ROUGH-CUT.md` |
 
 ### 3.3 All-in-One Monorepo Structure
@@ -148,7 +153,7 @@ parecut/
 │   ├── users/                     # Profile, credits, user preferences (FPS, etc.)
 │   ├── jobs/                      # Job creation, pipeline config, SSE progress, downloads
 │   ├── roughcut/                  # Before/After transcript generator + ROUGH-CUT.md builder
-│   ├── webhooks/                  # Modal HMAC webhook receiver
+│   ├── webhooks/                  # RunPod HMAC callback receiver
 │   ├── storage.py                 # boto3 R2 presigned PUT/GET helpers
 │   └── db.py                      # Async SQLAlchemy / SQLModel session
 ├── parecut_engine/                # Pure Python audio & ML pipeline logic
@@ -159,8 +164,8 @@ parecut/
 │   ├── speakers.py                # Stage 3b: Diarization + single-mic multi-speaker extraction
 │   ├── transcribe.py              # Stage 4: Whisper ASR + forced word alignment
 │   └── cut_planner.py             # Stage 5: Feeder/presenter rules + LLM take selector
-├── modal_app/                     # Serverless GPU deployment
-│   └── worker.py                  # Modal @app.cls / @app.function wrappers around parecut_engine
+├── runpod_app/                    # Serverless GPU deployment
+│   └── worker.py                  # RunPod serverless handlers around parecut_engine
 └── web/                           # Frontend UI (built & mounted by FastAPI at /)
 ```
 
@@ -176,10 +181,10 @@ Browser
 FastAPI Backend
   ├─ Validates audio metadata via ffprobe (duration, channels, sample rate)
   ├─ Creates Job row in Postgres & reserves user credits
-  ├─ Calls modal.Function.spawn(job_id, pipeline_config)
+  ├─ Submits a RunPod /run request (job_id, pipeline_config) and stores runpod_job_id
   │
   ▼
-Modal Orchestrator & GPU Workers (imports parecut_engine)
+RunPod Serverless Workers (imports parecut_engine)
   ├─ [Step 1: Clean]      CPU/L4   ──► jobs/{id}/01_cleaned.wav
   ├─ [Step 2: Enhance]    L4 GPU   ──► jobs/{id}/02_enhanced.wav
   ├─ [Step 3: Separate]   A10G GPU ──► jobs/{id}/stems/{music,dialogue,spk_01,spk_02}.wav
@@ -189,8 +194,8 @@ Modal Orchestrator & GPU Workers (imports parecut_engine)
   │                                    + 05_transcript_after.{md,srt,json}
   │                                    + ROUGH-CUT.md
   │
-  ├─ Streams progress % to Redis ──► FastAPI SSE (/api/jobs/{id}/events) ──► Browser UI
-  └─ Sends signed webhook on stage completion ──► FastAPI settles credits & marks Ready
+  ├─ FastAPI polls RunPod status or receives a signed callback, then relays progress to SSE
+  └─ On completion FastAPI settles credits and marks the job Ready
 ```
 
 ---
@@ -330,7 +335,7 @@ Because v1 delegates NLE execution to the user's coding agent (Claude Code, Curs
    - `id (UUID)`, `user_id (FK)`, `status ("queued"|"running"|"completed"|"failed"|"canceled")`, `source_filename`, `source_r2_key`, `duration_seconds (Float)`, `sample_rate (Int)`, `fps (Str)`
    - `pipeline_config (JSONB)`: `{ "noise_reduction": true, "enhance": true, "enhance_mix": 0.8, "separate_music": true, "separate_speakers": true, "transcribe": true, "rough_cut": true }`
    - `speaker_roles (JSONB)`: `{ "SPEAKER_01": "presenter", "SPEAKER_02": "feeder" }`
-   - `modal_call_id (Str)`, `error_code (Str nullable)`, `created_at`, `completed_at`
+   - `runpod_job_id (Str)`, `error_code (Str nullable)`, `created_at`, `completed_at`
 5. **`job_artifacts`**
    - `id (UUID)`, `job_id (FK)`, `kind ("cleaned_audio"|"enhanced_audio"|"stem_music"|"stem_dialogue"|"stem_speaker"|"transcript_before"|"transcript_after"|"rough_cut_md")`, `label (Str)`, `format ("wav"|"flac"|"md"|"srt"|"vtt"|"json")`, `r2_key (Str)`, `size_bytes (BigInt)`
 
@@ -341,38 +346,61 @@ Because v1 delegates NLE execution to the user's coding agent (Claude Code, Curs
 | `POST` | `/api/auth/register` · `/api/auth/login` · `/api/auth/oauth/{provider}` | User authentication |
 | `GET/PATCH` | `/api/profile` | View profile, credit balance, job history, update default FPS & audio preferences |
 | `POST` | `/api/uploads/presign` | Returns a presigned R2 `PUT` URL + `upload_key` for direct browser upload |
-| `POST` | `/api/jobs` | Validates uploaded file, reserves credits, and spawns the selected Modal pipeline |
+| `POST` | `/api/jobs` | Validates uploaded file, reserves credits, and submits the selected pipeline to RunPod |
 | `GET` | `/api/jobs/{job_id}` | Job details, stage statuses, detected speakers, and downloadable artifact list |
 | `GET` | `/api/jobs/{job_id}/events` | Server-Sent Events (SSE) stream for real-time stage & percentage progress |
 | `PATCH` | `/api/jobs/{job_id}/speakers` | Re-assign speaker roles (e.g. mark `SPEAKER_02` as `feeder`) and **instantly regenerate** `ROUGH-CUT.md` and `transcript_after.*` on the FastAPI server without re-running GPU stages |
 | `GET` | `/api/jobs/{job_id}/download/{artifact_id}` | Returns a signed R2 download URL (`Content-Disposition: attachment`) or bundles selected files as a `.zip` |
-| `POST` | `/api/webhooks/modal` | HMAC-verified webhook from Modal workers reporting stage completion, artifacts, and internal GPU-seconds |
+| `POST` | `/api/webhooks/runpod` | HMAC-verified callback from RunPod workers reporting stage completion, artifacts, and internal GPU-seconds |
 
 ---
 
-## 7. Modal Serverless GPU Architecture
+## 7. RunPod Serverless GPU Architecture
 
-### 7.1 Container & GPU Mapping
+### 7.1 Endpoint & GPU Mapping
 
-Because the user can toggle any subset of the pipeline, the Modal orchestrator runs only the requested steps:
+Because the user can toggle any subset of the pipeline, FastAPI submits only the requested stages. RunPod configures the GPU type per endpoint.
 
-| Pipeline Step | Modal Compute | Model Candidates (Benchmark in Phase 0) | Runs When |
+| Pipeline Step | RunPod Compute | Model Candidates (Benchmark in Phase 0) | Runs When |
 |---|---|---|---|
-| **Orchestrator & Ingest** | CPU (2–4 cores) | `ffmpeg`, `ffprobe`, VAD chunk planner | Every job |
-| **1. Noise Reduction** | CPU | `pedalboard` / `scipy` / `noisereduce` + `ffmpeg` EBU R128 | `noise_reduction = true` |
-| **2. AI Enhancement** | **L4 GPU** (or T4) | `DeepFilterNet3` / `Resemble Enhance` / `VoiceFixer` | `enhance = true` |
-| **3a. Music Separation** | **A10G GPU** (or L4) | `htdemucs_ft` (vocals vs. other) | `separate_music = true` |
-| **3b. Speaker Separation** | **L4 / A10G GPU** | `pyannote 3.1` (diarization) + `MossFormer2` / `ClearerVoice-Studio` (TSE) | `separate_speakers = true` |
-| **4. Transcription** | **L4 GPU** | `faster-whisper (large-v3-turbo)` + `wav2vec2` forced alignment | `transcribe = true` or `rough_cut = true` |
-| **5. Rough-Cut & Markdown** | CPU + LLM API | `parecut_engine.cut_planner` (Rules + LLM take selector) | `rough_cut = true` |
+| **Orchestrator & Ingest** | CPU in FastAPI | `ffmpeg`, `ffprobe`, VAD chunk planner | Every job |
+| **1. Noise Reduction** | CPU in FastAPI | `pedalboard` / `scipy` / `noisereduce` + `ffmpeg` EBU R128 | `noise_reduction = true` |
+| **2. AI Enhancement** | `parecut-audio`, **L4 GPU** (or T4) | `DeepFilterNet3` / `Resemble Enhance` / `VoiceFixer` | `enhance = true` |
+| **3a. Music Separation** | `parecut-separate`, **A10G GPU** (or L4) | `htdemucs_ft` (vocals vs. other) | `separate_music = true` |
+| **3b. Speaker Separation** | `parecut-separate` / `parecut-audio`, **L4 or A10G** | `pyannote 3.1` (diarization) + `MossFormer2` / `ClearerVoice-Studio` (TSE) | `separate_speakers = true` |
+| **4. Transcription** | `parecut-audio`, **L4 GPU** | `faster-whisper (large-v3-turbo)` + `wav2vec2` forced alignment | `transcribe = true` or `rough_cut = true` |
+| **5. Rough-Cut & Markdown** | CPU in FastAPI + LLM API | `parecut_engine.cut_planner` (Rules + LLM take selector) | `rough_cut = true` |
 
-### 7.2 Key Operational Rules (Retained & Simplified from v2.0)
+### 7.2 Key Operational Rules
 
-1. **Consolidated GPU Classes:** Group L4 models (`enhance`, `diarize`, `transcribe`) into one Modal `@app.cls(gpu="L4", scaledown_window=60)` with weights baked into the image or mounted from a read-only `modal.Volume`, loaded once in `@modal.enter()`. This avoids paying multiple cold starts on a single job.
-2. **Sample-Exact Outputs:** Every audio stage preserves the exact sample length of the input file so stems and original video never drift out of sync.
-3. **Full-File Diarization:** Diarization runs on the full audio file (up to 3 hours) so `SPEAKER_01` and `SPEAKER_02` never swap identities mid-file.
-4. **Re-cutting is Free & Instant:** Once Stage 4 (`transcript_raw.json`) is saved in Postgres/R2, changing speaker roles, silence thresholds, or FPS in the web UI re-runs Stage 5 directly inside FastAPI in seconds, updating `ROUGH-CUT.md` and `transcript_after.*` with zero GPU cost.
-5. **24-Hour Retention Sweep:** An hourly background task in FastAPI deletes raw uploads and heavy WAV stems from R2 24 hours after job completion (with a 2-day R2 lifecycle rule as a safety net), while optionally keeping the lightweight `.md` and transcript text files in the user's profile history.
+1. **Endpoint per GPU class:** `parecut-audio` (L4) handles enhancement, diarization, and transcription. `parecut-separate` (A10G) handles music separation and target-speaker extraction. Weights are baked into the image or mounted read-only from a RunPod network volume and loaded once in the worker handler. This avoids paying multiple cold starts on a single job.
+2. **Backend-driven orchestration:** `RunPodPipelineRunner` implements `PipelineRunner`. It submits `/run`, stores `runpod_job_id`, polls `/status/{id}` or accepts a signed callback, updates `stage_states`, and publishes `JobEvent`s. Workers never connect to Postgres.
+3. **Storage contract:** FastAPI issues short-lived presigned R2 GET and PUT URLs. Workers receive URLs, never R2 credentials.
+4. **Sample-Exact Outputs:** Every audio stage preserves the exact sample length of the input file so stems and original video never drift out of sync.
+5. **Full-File Diarization:** Diarization runs on the full audio file (up to 3 hours) so `SPEAKER_01` and `SPEAKER_02` never swap identities mid-file.
+6. **Re-cutting is Free & Instant:** Once Stage 4 (`transcript_raw.json`) is saved in Postgres/R2, changing speaker roles, silence thresholds, or FPS in the web UI re-runs Stage 5 directly inside FastAPI in seconds, updating `ROUGH-CUT.md` and `transcript_after.*` with zero GPU cost.
+7. **24-Hour Retention Sweep:** An hourly background task in FastAPI deletes raw uploads and heavy WAV stems from R2 24 hours after job completion (with a 2-day R2 lifecycle rule as a safety net), while optionally keeping the lightweight `.md` and transcript text files in the user's profile history.
+8. **Scale-to-zero with FlashBoot:** Keep `workersMin = 0` until paid volume justifies a warm worker. Enable FlashBoot on both endpoints.
+
+### 7.3 RunPod Request Contract
+
+FastAPI submits the job and outputs contract to the selected endpoint:
+
+```json
+{
+  "input": {
+    "job_id": "uuid",
+    "stages": ["enhance", "transcribe"],
+    "fps": "25",
+    "enhance_mix": 0.8,
+    "inputs": { "source": "<presigned R2 GET URL>" },
+    "outputs": { "enhanced": "<presigned R2 PUT URL>", "transcript": "<presigned R2 PUT URL>" }
+  },
+  "webhook": "https://app.parecut.example/api/webhooks/runpod"
+}
+```
+
+The worker downloads and uploads through those URLs, reports progress with `runpod.serverless.progress_update`, and returns artifact metadata plus GPU seconds. When a worker calls back to FastAPI, the callback is HMAC-SHA256 signed with a shared secret. FastAPI remains the only process that reads or writes Postgres.
 
 ---
 
@@ -392,19 +420,19 @@ Because the user can toggle any subset of the pipeline, the Modal orchestrator r
 
 ### 8.2 Non-Functional Requirements (v1)
 
-- **NFR-PERF-01:** Cold start on Modal L4/A10G ≤ 25 s (p95); end-to-end full pipeline for a 30-minute recording finishes in ≤ 5 minutes (p50).
+- **NFR-PERF-01:** Cold start on RunPod L4/A10G ≤ 25 s (p95); end-to-end full pipeline for a 30-minute recording finishes in ≤ 5 minutes (p50).
 - **NFR-QLT-01:** Word boundary alignment error ≤ 40 ms (1 frame at 25 fps) so cuts generated from `ROUGH-CUT.md` do not clip words.
-- **NFR-COST-01:** Blended cloud COGS ≤ $0.35 per source-hour for the full pipeline; scale-to-zero (`min_containers = 0`) until paid volume justifies a warm container.
-- **NFR-SEC-01:** All R2 uploads and downloads use presigned URLs (≤ 15-min TTL); Modal webhooks are verified via HMAC-SHA256.
+- **NFR-COST-01:** Blended cloud COGS ≤ $0.35 per source-hour for the full pipeline; scale-to-zero (`workersMin = 0`) until paid volume justifies a warm worker.
+- **NFR-SEC-01:** All R2 uploads and downloads use presigned URLs (≤ 15-min TTL); worker callbacks are verified via HMAC-SHA256.
 
 ---
 
 ## 9. Implementation Plan (v1 Web Application)
 
-### Phase 0 — Audio & Model Benchmark on Modal (Week 1)
-- Set up the `parecut` Python repo (`uv`) and `modal_app/worker.py`.
+### Phase 0 — Audio & Model Benchmark on RunPod (Week 1)
+- Set up the `parecut` Python repo (`uv`) and `runpod_app/worker.py`.
 - Test the 4 core stages (`dsp`, `enhance`, `separate + speakers`, `transcribe + align`) on 3–5 real recordings (including a feeder/presenter recording and a noisy single-mic clip).
-- Verify output quality, sample-exact alignment, and measure exact Modal GPU-seconds per minute of audio.
+- Verify output quality, sample-exact alignment, and measure exact RunPod GPU-seconds per minute of audio.
 - Verify commercial licenses of the chosen model weights (e.g., `DeepFilterNet3` / `Resemble Enhance`, `ClearerVoice-Studio` / `MossFormer2`, `pyannote`, `faster-whisper`).
 
 ### Phase 1 — Core Engine & `ROUGH-CUT.md` Generator (Week 2)
@@ -420,7 +448,7 @@ Because the user can toggle any subset of the pipeline, the Modal orchestrator r
   - Postgres + SQLModel tables (`users`, `user_profiles`, `jobs`, `job_artifacts`, `credit_ledger`).
   - Auth (Login / Signup / OAuth) and User Profile endpoints.
   - R2 presigned upload & download endpoints.
-  - Job creation endpoint that spawns the Modal pipeline and streams progress via SSE.
+  - Job creation endpoint that submits the RunPod pipeline and streams progress via SSE.
   - Speaker-role override endpoint (`PATCH /api/jobs/{id}/speakers`) that regenerates `ROUGH-CUT.md` and `transcript_after` on the fly.
 
 ### Phase 3 — Web UI, Audio Player & Launch Polish (Weeks 4–5)

@@ -33,7 +33,7 @@ Implemented:
 Not wired yet:
 
 - real noise reduction, enhancement, separation, diarization, or transcription
-- Modal GPU workers, Cloudflare R2, Redis, or LLM take selection
+- RunPod GPU workers, Cloudflare R2, Redis, or LLM take selection
 - Stripe billing and OAuth
 
 The mock pipeline copies the uploaded audio and generates demo transcript artifacts. It exercises the product flow. It does not perform real audio analysis.
@@ -42,7 +42,7 @@ The mock pipeline copies the uploaded audio and generates demo transcript artifa
 
 - Backend: FastAPI, SQLModel and SQLAlchemy, Alembic, SQLite by default (Postgres-ready), Argon2, PyJWT, SSE
 - Frontend: React, Vite, TypeScript, Tailwind CSS, TanStack Query
-- Planned GPU: Modal with Whisper, Demucs, pyannote, and a target-speaker model
+- Planned GPU: RunPod Serverless with Whisper, Demucs, pyannote, and a target-speaker model
 
 ## Run locally
 
@@ -101,7 +101,7 @@ PARECUT-SRS-v2.0.md product requirements
 
 1. Real rough-cut engine: timecodes, rule pass, before and after transcripts, `ROUGH-CUT.md`
 2. Local audio ingest and DSP
-3. Modal GPU stages: enhancement, separation, transcription
+3. RunPod GPU stages: enhancement, separation, transcription
 4. R2 storage and signed uploads
 5. LLM take selection
 6. Billing, OAuth, and retention
