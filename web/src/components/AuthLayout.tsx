@@ -12,38 +12,41 @@ export default function AuthLayout({ title, subtitle, children }: AuthLayoutProp
   return (
     <main className="min-h-screen bg-surface text-on-surface">
       <div className="mx-auto grid min-h-screen max-w-6xl lg:grid-cols-[1.02fr_0.98fr]">
-        <section className="hidden flex-col justify-between border-r border-outline-variant px-12 py-12 lg:flex">
-          <img
-            src="/brand/login-logo.png"
-            alt="Pare Cut"
-            className="h-24 w-auto self-start"
-          />
+        <section className="hidden flex-col border-r border-outline-variant px-12 py-12 lg:flex">
+          <div className="flex flex-1 flex-col justify-center">
+            <div className="max-w-[34rem]">
+              <img
+                src="/brand/login-logo.png"
+                alt="Pare Cut"
+                className="mb-10 h-24 w-auto"
+              />
+              <h1 className="text-[38px] font-semibold leading-[1.12] tracking-[-0.02em]">
+                Clean audio in.
+                <br />
+                A frame-accurate cut out.
+              </h1>
+              <p className="mt-5 max-w-sm text-[15px] leading-7 text-on-surface-variant">
+                One modular pipeline takes a difficult recording from raw microphone
+                audio to stems, a speaker-attributed transcript, and an exact
+                keep/remove specification.
+              </p>
 
-          <div className="max-w-[34rem]">
-            <h1 className="text-[38px] font-semibold leading-[1.12] tracking-[-0.02em]">
-              Clean audio in.
-              <br />
-              A frame-accurate cut out.
-            </h1>
-            <p className="mt-5 max-w-sm text-[15px] leading-7 text-on-surface-variant">
-              One modular pipeline takes a difficult recording from raw microphone
-              audio to stems, a speaker-attributed transcript, and an exact
-              keep/remove specification.
-            </p>
-
-            <ol aria-label="Processing pipeline" className="mt-10 grid grid-cols-5">
-              {PIPELINE.map((name, index) => (
-                <li key={name} className="flex flex-col">
-                  <div className="flex items-center">
-                    <span className="size-[7px] shrink-0 rounded-full bg-on-surface" />
-                    {index < PIPELINE.length - 1 ? (
-                      <span className="h-px flex-1 bg-outline-variant" />
-                    ) : null}
-                  </div>
-                  <span className="mt-3 text-[12px] text-on-surface-variant">{name}</span>
-                </li>
-              ))}
-            </ol>
+              <ol aria-label="Processing pipeline" className="mt-10 grid grid-cols-5">
+                {PIPELINE.map((name, index) => (
+                  <li key={name} className="flex flex-col">
+                    <div className="flex items-center">
+                      <span className="size-[7px] shrink-0 rounded-full bg-on-surface" />
+                      {index < PIPELINE.length - 1 ? (
+                        <span className="h-px flex-1 bg-outline-variant" />
+                      ) : null}
+                    </div>
+                    <span className="mt-3 text-[12px] text-on-surface-variant">
+                      {name}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </div>
           </div>
 
           <p className="text-[13px] text-on-surface-variant">
