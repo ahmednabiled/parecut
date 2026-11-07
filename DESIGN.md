@@ -90,8 +90,8 @@ Owner-supplied profile assets, self-hosted in `web/public/brand/`:
 
 - `login-logo.png` — the full Pare Cut script mark, used on auth pages and in the
   app sidebar with no separate wordmark beside it.
-- `cover.webp` — the profile cover in its original colors, used once as the
-  dashboard banner above the page content.
+- `cover.webp` — the profile cover in its original colors. Retained as a brand
+  asset but not currently placed in the interface.
 - `favicon.png` — the P mark on a surface-colored square.
 
 The cover is never used as a page background and never tinted. The logo is never
