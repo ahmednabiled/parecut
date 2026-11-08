@@ -9,11 +9,12 @@ This file is the compact handoff for the project. It records what was built, why
 Parecut is an AI audio engineering and rough-cut preparation tool for video editors. It turns a difficult recording into cleaned audio, stems, a speaker-attributed transcript, and a frame-accurate `ROUGH-CUT.md` with keep and remove ranges for Resolve or Premiere.
 
 - Local path: `/home/ahmednabil/Desktop/Station/parecut`
-- GitHub: https://github.com/ahmednabiled/parecut (public)
+- GitHub: https://github.com/ahmednabiled/parecut (private)
 - Active branch: `dev`
-- Other branches: `main` (public landing page, README, license), `phase-1-web-shell` (local Phase 1 history)
+- Other branches: `main` (landing page source, README, license), `phase-1-web-shell` (local Phase 1 history)
 - License: Apache-2.0 (`LICENSE`, `NOTICE`)
-- Remote: `origin` over HTTPS
+- Remote: `origin` over SSH
+- Worker image: `ghcr.io/ahmednabiled/parecut-worker:dev` (private GHCR)
 
 ## Conversation arc
 
@@ -113,10 +114,20 @@ Implemented:
 - End-to-end test: the runner submitted a job, the worker uploaded 15 artifacts to R2,
   the backend wrote all artifact rows, downloads matched the source, and credits settled
 
+Worker image:
+
+- GitHub Actions workflow `.github/workflows/worker-image.yml` builds `runpod_app/Dockerfile`
+  on pushes to `dev`.
+- The image is pushed privately to `ghcr.io/ahmednabiled/parecut-worker:dev` and
+  `ghcr.io/ahmednabiled/parecut-worker:sha-<short>`.
+- The repository is private, so Runpod needs a GitHub PAT with `read:packages` as a
+  registry credential. This is the next setup step.
+- The endpoint still runs the temporary `ttl.sh/parecut-worker-stub-1794167990:1h` image
+  until the GHCR credential is attached and a new release is deployed.
+
 Temporary:
 
-- The endpoint currently runs `ttl.sh/parecut-worker-stub-1794167990:1h`.
-  That tag expires one hour after push; deploy a persistent image before relying on it.
+- The `ttl.sh` tag expires one hour after push; do not rely on it.
 - The worker is a contract stub: it copies the source for audio artifacts and renders a
   demo transcript and `ROUGH-CUT.md`. It does not run the real models yet.
 - Worker progress updates caused the stub to hang in Runpod. They are disabled by default;

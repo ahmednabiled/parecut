@@ -112,7 +112,10 @@ Nemotron-3-Diarization replaces pyannote for speaker attribution. It does not se
 - `RunpodPipelineRunner`, `HttpRunpodClient`, and migration `f34d11320711` are implemented.
 - Endpoint `parecut-audio` (`yf16hg8td6au29`) is deployed with a stub worker.
 - An end-to-end job produced 15 artifacts in R2, wrote all artifact rows, and downloaded correctly.
-- The current worker image is an ephemeral `ttl.sh` tag. Replace it with a persistent image.
+- The repository is private. GitHub Actions builds and pushes
+  `ghcr.io/ahmednabiled/parecut-worker:dev` privately.
+- The endpoint still runs an ephemeral `ttl.sh` tag until a GitHub PAT with `read:packages`
+  is attached as a Runpod registry credential.
 - The real audio models are still pending.
 
 ## Consequences

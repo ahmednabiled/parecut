@@ -11,9 +11,11 @@ It takes a difficult recording (single microphone, room noise, an off-camera lin
 
 ## Branches
 
-- `main` contains the public coming-soon landing page (`index.html`).
+- `main` contains the coming-soon landing page source (`index.html`).
 - `dev` contains the application code and the implementation history.
 - This README is shared by both branches.
+- The repository is private. The worker image is published privately to
+  `ghcr.io/ahmednabiled/parecut-worker`.
 
 ## Current status
 
@@ -34,7 +36,7 @@ Optional infrastructure in place:
 
 - Cloudflare R2 storage behind `ObjectStorage` (`PARECUT_STORAGE_BACKEND=r2`)
 - Runpod Serverless runner behind `PipelineRunner` (`PARECUT_PIPELINE_RUNNER=runpod`)
-- A remote worker contract and stub image in `runpod_app/`
+- A remote worker contract in `runpod_app/`, built by GitHub Actions and pushed privately to GHCR
 
 Still not real:
 
