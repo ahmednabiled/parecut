@@ -66,6 +66,7 @@ class Job(SQLModel, table=True):
     status: str = Field(default="queued", index=True)
     source_filename: str
     source_r2_key: str
+    runpod_job_id: str | None = Field(default=None, index=True)
     duration_seconds: float | None = None
     sample_rate: int | None = None
     fps: str = Field(default="25")

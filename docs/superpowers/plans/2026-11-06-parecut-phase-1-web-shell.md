@@ -4,7 +4,7 @@
 
 **Goal:** Build the complete Parecut web shell — auth, profile, uploads, job flow, results UI — with every third-party dependency replaced by a local implementation behind a stable interface.
 
-**Architecture:** FastAPI serves a React SPA and owns all state in SQLModel/SQLite. Three protocols (`ObjectStorage`, `EventBroker`, `PipelineRunner`) isolate the local Phase 1 implementations from future R2, Redis, and RunPod swaps. Jobs run through a mock pipeline that writes real artifact rows/files and streams progress over SSE.
+**Architecture:** FastAPI serves a React SPA and owns all state in SQLModel/SQLite. Three protocols (`ObjectStorage`, `EventBroker`, `PipelineRunner`) isolate the local Phase 1 implementations from future R2, Redis, and Runpod swaps. Jobs run through a mock pipeline that writes real artifact rows/files and streams progress over SSE.
 
 **Tech Stack:** Python 3.12, FastAPI, SQLModel/SQLAlchemy 2 async, Alembic, Pydantic v2, pwdlib/argon2, PyJWT, SSE-Starlette, SQLite (aiosqlite); React 19, Vite, TypeScript, Tailwind v4, React Router, TanStack Query, Vitest.
 
@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Python 3.12 via `uv`; Node 22 via npm. No external services, API keys, Docker, Redis, RunPod, R2, or LLM calls are required to boot or test.
+- Python 3.12 via `uv`; Node 22 via npm. No external services, API keys, Docker, Redis, Runpod, R2, or LLM calls are required to boot or test.
 - All API routes live under `/api`. Responses are JSON except upload bytes, SSE, and download redirects. Errors are `{"detail": "..."}` with 400/401/402/403/404/409/413/422.
 - Auth: Argon2 hashing, HS256 JWT in httpOnly cookie `parecut_session`, `SameSite=Lax`, `Secure` only when `app_env == "prod"`, 7-day TTL.
 - Credits are `Decimal` minutes: signup `+30`; reserve `max(1, ceil(duration_seconds / 60))`; settle writes a `0` delta marker; failure/restart writes `+reserve`.

@@ -24,7 +24,7 @@ Parecut is an AI audio engineering and rough-cut preparation tool for video edit
 5. We ran the app, then redesigned the UI using the anti-slop rules and Material 3, restricted to black and white.
 6. We added the owner's X profile logo and cover, then simplified to the script logo and removed the cover from the UI.
 7. We made the repo public, added Apache-2.0 licensing, and added a README to both branches.
-8. The owner chose RunPod for GPU inference. We updated the SRS, design, plan, and README, then verified the integration against RunPod's current official docs.
+8. The owner chose Runpod for GPU inference. We updated the SRS, design, plan, and README, then verified the integration against Runpod's current official docs.
 
 ## Current status
 
@@ -46,14 +46,21 @@ Complete:
 - React shell with login, register, dashboard, and settings
 - Monochrome Material 3 visual system with Google Sans and the Pare Cut script logo
 - Backend tests, frontend tests, typecheck, and production build
+- Cloudflare R2 storage adapter behind `ObjectStorage`, verified with real put/get/delete
+- Runpod queue endpoint `parecut-audio` with a remote stub worker
+- `RunpodPipelineRunner`, `HttpRunpodClient`, and `jobs.runpod_job_id`
+- End-to-end R2 + Runpod job: 15 artifacts, downloads, and `ROUGH-CUT.md`
 
 Pending:
 
 - Task 18: New job UI (upload, pipeline toggles, FPS, credit estimate, 402 handling)
 - Task 19: Job detail UI (SSE timeline, speaker editor, artifact tabs, copy and download)
 - Task 20: FastAPI serving the built SPA, README polish, final verification
-- Real audio engine and GPU pipeline
-- Cloudflare R2, Redis, LLM take selection, Stripe, OAuth, retention
+- Real audio models in the worker (the current worker is a contract stub)
+- Persistent registry for the worker image (current image is an ephemeral `ttl.sh` tag)
+- `parecut-separate` endpoint
+- R2 bucket CORS for browser uploads
+- Redis, LLM take selection, Stripe, OAuth, retention
 
 The backend already supports the flows that Tasks 18 and 19 need. The UI routes `/new` and `/jobs/:id` are honest "Coming soon" placeholders.
 
@@ -64,16 +71,16 @@ The backend already supports the flows that Tasks 18 and 19 need. The UI routes 
 - Argon2 (`pwdlib`), PyJWT, SSE-Starlette
 - React 19, Vite, TypeScript, Tailwind v4, TanStack Query, React Router
 - Google Sans for text, IBM Plex Mono for timecodes and numeric data
-- Planned GPU: RunPod Serverless queue-based endpoints
-- Planned storage: Cloudflare R2
+- GPU: Runpod Serverless queue-based endpoints
+- Storage: Cloudflare R2 for remote workers, local signed storage for development
 
 ## Architecture seams
 
 Phase 1 is built around three protocols so later phases do not rewrite routers or UI:
 
-- `ObjectStorage`: local signed-storage implementation now, R2 later
+- `ObjectStorage`: local signed storage and Cloudflare R2 adapters; select with `PARECUT_STORAGE_BACKEND`
 - `EventBroker`: in-memory SSE broker now, Redis later
-- `PipelineRunner`: mock runner now, `RunPodPipelineRunner` later
+- `PipelineRunner`: mock runner and `RunpodPipelineRunner`; select with `PARECUT_PIPELINE_RUNNER`
 
 Job progress is stored in `jobs.stage_states`, so reloads and SSE reconnects rebuild the timeline.
 
@@ -88,36 +95,67 @@ Job progress is stored in `jobs.stage_states`, so reloads and SSE reconnects reb
 - The UI is monochrome Material 3. No gradients, glass, glow, or amber accent. Error red is the only semantic color.
 - The auth page uses the script `Pare Cut` logo alone. The app sidebar uses the same logo alone. The P mark is only the favicon.
 - The cover image is retained at `web/public/brand/cover.webp` but is not currently placed in the interface.
-- GPU inference will use RunPod Serverless, not Modal. See `docs/adr/0001-runpod-gpu-inference.md`.
+- GPU inference will use Runpod Serverless, not Modal. See `docs/adr/0001-runpod-gpu-inference.md`.
 - The repository is public and Apache-2.0 licensed.
 
-## RunPod integration (decided, not implemented)
+## Runpod integration (backend and stub worker in place)
+
+Implemented:
+
+- R2 bucket `parecut` in Western Europe; token `parecut-backend` scoped to that bucket
+- R2 credentials live only in `.env`; S3 put/get/delete verified
+- `R2ObjectStorage` behind `ObjectStorage`
+- `RunpodPipelineRunner` and `HttpRunpodClient` behind `PipelineRunner`
+- `jobs.runpod_job_id` added by migration `f34d11320711`
+- `runpod_app/worker.py` stub and `runpod_app/Dockerfile`
+- `parecut-audio` endpoint `yf16hg8td6au29`, queue-based, 24 GB AMPERE_24 (L4/A5000/3090),
+  0-2 workers, 10s idle timeout, 4h execution timeout, FlashBoot on
+- End-to-end test: the runner submitted a job, the worker uploaded 15 artifacts to R2,
+  the backend wrote all artifact rows, downloads matched the source, and credits settled
+
+Temporary:
+
+- The endpoint currently runs `ttl.sh/parecut-worker-stub-1794167990:1h`.
+  That tag expires one hour after push; deploy a persistent image before relying on it.
+- The worker is a contract stub: it copies the source for audio artifacts and renders a
+  demo transcript and `ROUGH-CUT.md`. It does not run the real models yet.
+- Worker progress updates caused the stub to hang in Runpod. They are disabled by default;
+  set `PARECUT_WORKER_PROGRESS=1` only after implementing them with a timeout or a safer
+  progress mechanism.
 
 Architecture:
 
-- `parecut-audio` endpoint, L4: enhancement, diarization, transcription
-- `parecut-separate` endpoint, A10G: music separation, target-speaker extraction
+- `parecut-audio` endpoint, 24 GB pool: enhancement, diarization, transcription
+- `parecut-separate` endpoint, future: music separation, target-speaker extraction
 - FastAPI orchestrates with `POST /run` and `GET /status/{id}`
 - Store `runpod_job_id` on the job
 - Poll `/status` for progress and optional completion webhook
 - Workers use `runpod.serverless.start`, receive presigned R2 URLs, and never touch Postgres or R2 credentials
-- `RunPodPipelineRunner` implements the existing `PipelineRunner` protocol
-- `runpod_app/worker.py` is the future worker entrypoint
+- `RunpodPipelineRunner` implements the existing `PipelineRunner` protocol
+
+Model stack:
+
+- Noise reduction: DeepFilterNet3
+- Diarization: NVIDIA Nemotron-3-Diarization (100M, up to 8 speakers, OpenMDW 1.1)
+- Transcription: WhisperX large-v3-turbo
+- Music separation: Demucs
+- Speech separation, optional: MossFormer2-SS
+- Enhancement, optional: Resemble Enhance
 
 Important current facts from official docs (verified 2026-11-08):
 
 - Use queue-based endpoints, not load-balancing endpoints
-- `/run` is async, returns `IN_QUEUE`; statuses are `IN_QUEUE`, `IN_PROGRESS`, `COMPLETED`, `FAILED`
+- `/run` is async, returns `IN_QUEUE`; terminal statuses are `COMPLETED`, `FAILED`, `CANCELLED`, `TIMED_OUT`
 - `/run` payload limit is 10 MB; pass R2 URLs
 - Async results are retained 30 minutes after completion
 - Webhook is an optional top-level sibling of `input`
-- Webhooks fire only at a terminal state, are unsigned, retry up to 2 times, and must be idempotent
+- Webhooks fire at a terminal state, are unsigned, retry up to 2 times, and must be idempotent
 - Verify webhook job id and status with `/status` before changing credits
 - `progress_update` is read through `/status` polling
-- FlashBoot is on in the console but off by default in REST v2; set `flashBootType = FLASHBOOT`
-- Default execution timeout is 600 seconds; raise it for long sources
+- FlashBoot is on in the console but off by default in REST v2; set `flashboot = FLASHBOOT`
+- REST v2 endpoint `timeout` defaults to 300000 ms; set it explicitly for long sources
 - Network volumes mount at `/runpod-volume`; `VolumeCache` persists model caches
-- `runpod>=2.0` supports Python 3.10 to 3.14
+- Use `runpod>=2.1,<3`; Python 3.10 to 3.14 is supported
 
 Official docs:
 
@@ -181,8 +219,8 @@ The SSE test uses a finite stream because httpx's ASGITransport buffers the enti
 ## Important files
 
 - `README.md`: project overview and setup
-- `PARECUT-SRS-v2.0.md`: SRS v3.1, RunPod architecture
-- `docs/adr/0001-runpod-gpu-inference.md`: RunPod decision record and contract
+- `PARECUT-SRS-v2.0.md`: SRS v3.1, Runpod architecture
+- `docs/adr/0001-runpod-gpu-inference.md`: Runpod decision record and contract
 - `docs/superpowers/specs/2026-11-06-parecut-v1-web-shell-design.md`: Phase 1 design
 - `docs/superpowers/plans/2026-11-06-parecut-phase-1-web-shell.md`: 20-task Phase 1 plan
 - `DESIGN.md`: monochrome Material 3 direction and brand asset rules
@@ -204,34 +242,43 @@ The SSE test uses a finite stream because httpx's ASGITransport buffers the enti
 - `89b7df4`: script logo on auth pages
 - `d46bd9d`: Apache-2.0 license
 - `6c92f9c`: project README
-- `1c4eb6a`: RunPod architecture
-- `0734d68`: RunPod docs verification
+- `1c4eb6a`: Runpod architecture
+- `0734d68`: Runpod docs verification
 
 The progress file itself adds one more documentation commit after these.
 
 ## Next actions in order
 
-1. Task 18: build `/new`.
+1. Replace the stub worker with the real model pipeline.
+   - DeepFilterNet3 for noise reduction
+   - Nemotron-3-Diarization for speaker attribution
+   - WhisperX large-v3-turbo for transcription and word timing
+   - Demucs for music separation
+   - MossFormer2-SS and Resemble Enhance as optional stages
+   - Generate real before/after transcripts and `ROUGH-CUT.md`
+2. Push the worker image to a persistent registry, deploy it to `parecut-audio`, and create
+   `parecut-separate`.
+3. Add R2 bucket CORS for browser uploads, then switch the app to
+   `PARECUT_STORAGE_BACKEND=r2` and `PARECUT_PIPELINE_RUNNER=runpod`.
+4. Task 18: build `/new`.
    - Drag and drop audio or video
    - Presigned upload with progress
    - Pipeline toggles and enhance mix
    - FPS select and credit estimate
    - Inline 402 shortfall handling
-2. Task 19: build `/jobs/:id`.
+5. Task 19: build `/jobs/:id`.
    - SSE stage timeline
    - Speaker role editor with PATCH regeneration
    - Tabs for audio, before transcript, after transcript, and `ROUGH-CUT.md`
    - Download buttons and copy-for-agent
-3. Task 20: serve the built SPA from FastAPI, finish README and manual smoke test.
-4. Implement the real rough-cut engine (timecodes, rules, LLM take selection).
-5. Implement local DSP and audio ingest.
-6. Implement RunPod workers and `RunPodPipelineRunner`.
-7. Add R2, Redis, Stripe, OAuth, and retention.
+6. Task 20: serve the built SPA from FastAPI, finish README and manual smoke test.
+7. Implement the real rough-cut engine (timecodes, rules, LLM take selection).
+8. Add Redis, Stripe, OAuth, and retention.
 
 ## Non-negotiables
 
 - No secrets in the repository. `.env` is ignored.
-- Keep the three seams intact when adding R2, Redis, and RunPod.
+- Keep the three seams intact when adding R2, Redis, and Runpod.
 - Preserve sample-exact audio outputs.
 - Keep the UI monochrome. Red is only for errors.
 - Keep demo content labeled as demo.
