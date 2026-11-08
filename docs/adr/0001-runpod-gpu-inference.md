@@ -114,8 +114,11 @@ Nemotron-3-Diarization replaces pyannote for speaker attribution. It does not se
 - An end-to-end job produced 15 artifacts in R2, wrote all artifact rows, and downloaded correctly.
 - The repository is private. GitHub Actions builds and pushes
   `ghcr.io/ahmednabiled/parecut-worker:dev` privately.
-- The endpoint still runs an ephemeral `ttl.sh` tag until a GitHub PAT with `read:packages`
-  is attached as a Runpod registry credential.
+- Runpod pulls it with the `ghcr-parecut` registry credential, backed by a GitHub token
+  scoped to `read:packages`.
+- The private pull was verified end to end: a fresh worker processed a job and uploaded
+  15 artifacts to R2.
+- The `dev` tag is mutable; pin `sha-<short>` for production releases.
 - The real audio models are still pending.
 
 ## Consequences

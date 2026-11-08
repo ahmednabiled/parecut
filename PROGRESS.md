@@ -58,7 +58,7 @@ Pending:
 - Task 19: Job detail UI (SSE timeline, speaker editor, artifact tabs, copy and download)
 - Task 20: FastAPI serving the built SPA, README polish, final verification
 - Real audio models in the worker (the current worker is a contract stub)
-- Persistent registry for the worker image (current image is an ephemeral `ttl.sh` tag)
+- Pin the worker image to a `sha-<short>` tag for production releases
 - `parecut-separate` endpoint
 - R2 bucket CORS for browser uploads
 - Redis, LLM take selection, Stripe, OAuth, retention
@@ -120,19 +120,22 @@ Worker image:
   on pushes to `dev`.
 - The image is pushed privately to `ghcr.io/ahmednabiled/parecut-worker:dev` and
   `ghcr.io/ahmednabiled/parecut-worker:sha-<short>`.
-- The repository is private, so Runpod needs a GitHub PAT with `read:packages` as a
-  registry credential. This is the next setup step.
-- The endpoint still runs the temporary `ttl.sh/parecut-worker-stub-1794167990:1h` image
-  until the GHCR credential is attached and a new release is deployed.
+- The repository is private, so Runpod uses the `ghcr-parecut` registry credential with a
+  GitHub PAT scoped to `read:packages`.
+- The endpoint now runs `ghcr.io/ahmednabiled/parecut-worker:dev`.
+- The private pull was verified end to end: a fresh worker pulled the private image,
+  processed a job, and uploaded 15 artifacts to R2.
+- The `dev` tag is mutable; pin `sha-<short>` for production releases.
 
-Temporary:
+Current worker:
 
-- The `ttl.sh` tag expires one hour after push; do not rely on it.
 - The worker is a contract stub: it copies the source for audio artifacts and renders a
   demo transcript and `ROUGH-CUT.md`. It does not run the real models yet.
 - Worker progress updates caused the stub to hang in Runpod. They are disabled by default;
   set `PARECUT_WORKER_PROGRESS=1` only after implementing them with a timeout or a safer
   progress mechanism.
+- The first private GHCR cold start was about 66 seconds, mostly image pull. FlashBoot,
+  a pinned image, or a network volume for model caches will reduce this later.
 
 Architecture:
 

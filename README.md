@@ -37,11 +37,11 @@ Optional infrastructure in place:
 - Cloudflare R2 storage behind `ObjectStorage` (`PARECUT_STORAGE_BACKEND=r2`)
 - Runpod Serverless runner behind `PipelineRunner` (`PARECUT_PIPELINE_RUNNER=runpod`)
 - A remote worker contract in `runpod_app/`, built by GitHub Actions and pushed privately to GHCR
+- A `ghcr-parecut` Runpod registry credential using a GitHub token scoped to `read:packages`
 
 Still not real:
 
 - the audio models in the worker (the current worker is a contract stub)
-- a persistent worker image registry
 - Redis, LLM take selection, Stripe billing, and OAuth
 
 The default mock pipeline copies the uploaded audio and generates demo transcript artifacts. It exercises the product flow. It does not perform real audio analysis.
