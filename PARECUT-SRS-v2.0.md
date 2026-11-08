@@ -351,7 +351,7 @@ Because v1 delegates NLE execution to the user's coding agent (Claude Code, Curs
 | `GET` | `/api/jobs/{job_id}/events` | Server-Sent Events (SSE) stream for real-time stage & percentage progress |
 | `PATCH` | `/api/jobs/{job_id}/speakers` | Re-assign speaker roles (e.g. mark `SPEAKER_02` as `feeder`) and **instantly regenerate** `ROUGH-CUT.md` and `transcript_after.*` on the FastAPI server without re-running GPU stages |
 | `GET` | `/api/jobs/{job_id}/download/{artifact_id}` | Returns a signed R2 download URL (`Content-Disposition: attachment`) or bundles selected files as a `.zip` |
-| `POST` | `/api/webhooks/runpod` | HMAC-verified callback from RunPod workers reporting stage completion, artifacts, and internal GPU-seconds |
+| `POST` | `/api/webhooks/runpod` | Optional RunPod completion callback. Verify the job id and terminal status with `/status` before settling credits or artifacts |
 
 ---
 
@@ -359,7 +359,7 @@ Because v1 delegates NLE execution to the user's coding agent (Claude Code, Curs
 
 ### 7.1 Endpoint & GPU Mapping
 
-Because the user can toggle any subset of the pipeline, FastAPI submits only the requested stages. RunPod configures the GPU type per endpoint.
+Because the user can toggle any subset of the pipeline, FastAPI submits only the requested stages. RunPod configures the GPU type per endpoint. Both endpoints are queue-based, so FastAPI uses `/run` and `/status`, not a load-balancing HTTP contract.
 
 | Pipeline Step | RunPod Compute | Model Candidates (Benchmark in Phase 0) | Runs When |
 |---|---|---|---|
@@ -374,13 +374,13 @@ Because the user can toggle any subset of the pipeline, FastAPI submits only the
 ### 7.2 Key Operational Rules
 
 1. **Endpoint per GPU class:** `parecut-audio` (L4) handles enhancement, diarization, and transcription. `parecut-separate` (A10G) handles music separation and target-speaker extraction. Weights are baked into the image or mounted read-only from a RunPod network volume and loaded once in the worker handler. This avoids paying multiple cold starts on a single job.
-2. **Backend-driven orchestration:** `RunPodPipelineRunner` implements `PipelineRunner`. It submits `/run`, stores `runpod_job_id`, polls `/status/{id}` or accepts a signed callback, updates `stage_states`, and publishes `JobEvent`s. Workers never connect to Postgres.
+2. **Backend-driven orchestration:** `RunPodPipelineRunner` implements `PipelineRunner`. It submits `/run`, stores `runpod_job_id`, polls `/status/{id}` for progress, and optionally receives a RunPod completion webhook that it verifies against `/status`. It updates `stage_states` and publishes `JobEvent`s. Workers never connect to Postgres.
 3. **Storage contract:** FastAPI issues short-lived presigned R2 GET and PUT URLs. Workers receive URLs, never R2 credentials.
 4. **Sample-Exact Outputs:** Every audio stage preserves the exact sample length of the input file so stems and original video never drift out of sync.
 5. **Full-File Diarization:** Diarization runs on the full audio file (up to 3 hours) so `SPEAKER_01` and `SPEAKER_02` never swap identities mid-file.
 6. **Re-cutting is Free & Instant:** Once Stage 4 (`transcript_raw.json`) is saved in Postgres/R2, changing speaker roles, silence thresholds, or FPS in the web UI re-runs Stage 5 directly inside FastAPI in seconds, updating `ROUGH-CUT.md` and `transcript_after.*` with zero GPU cost.
 7. **24-Hour Retention Sweep:** An hourly background task in FastAPI deletes raw uploads and heavy WAV stems from R2 24 hours after job completion (with a 2-day R2 lifecycle rule as a safety net), while optionally keeping the lightweight `.md` and transcript text files in the user's profile history.
-8. **Scale-to-zero with FlashBoot:** Keep `workersMin = 0` until paid volume justifies a warm worker. Enable FlashBoot on both endpoints.
+8. **Scale-to-zero with FlashBoot:** Keep `workersMin = 0` until paid volume justifies a warm worker. Set `flashBootType = FLASHBOOT` explicitly on both endpoints; the console enables FlashBoot by default, but REST v2 defaults it off. Raise the execution timeout above the 600-second service default for long sources.
 
 ### 7.3 RunPod Request Contract
 
@@ -400,7 +400,7 @@ FastAPI submits the job and outputs contract to the selected endpoint:
 }
 ```
 
-The worker downloads and uploads through those URLs, reports progress with `runpod.serverless.progress_update`, and returns artifact metadata plus GPU seconds. When a worker calls back to FastAPI, the callback is HMAC-SHA256 signed with a shared secret. FastAPI remains the only process that reads or writes Postgres.
+The worker downloads and uploads through those URLs, reports progress with `runpod.serverless.progress_update`, and returns artifact metadata plus GPU seconds. Progress is read through `/status`; it is not pushed by RunPod. The `webhook` field is top-level, optional, and fires only at a terminal state. RunPod retries a failed webhook up to 2 more times with a 10-second delay, so the receiver must be public HTTPS, return 2xx, and be idempotent. RunPod webhooks are unsigned; FastAPI verifies the job id and status with `/status` before changing credits. A failed webhook does not fail the job, and results remain available through `/status` for 30 minutes after completion. `/run` payloads are limited to 10 MB, so audio moves through R2 URLs, not the request body. FastAPI remains the only process that reads or writes Postgres.
 
 ---
 
@@ -423,7 +423,7 @@ The worker downloads and uploads through those URLs, reports progress with `runp
 - **NFR-PERF-01:** Cold start on RunPod L4/A10G ≤ 25 s (p95); end-to-end full pipeline for a 30-minute recording finishes in ≤ 5 minutes (p50).
 - **NFR-QLT-01:** Word boundary alignment error ≤ 40 ms (1 frame at 25 fps) so cuts generated from `ROUGH-CUT.md` do not clip words.
 - **NFR-COST-01:** Blended cloud COGS ≤ $0.35 per source-hour for the full pipeline; scale-to-zero (`workersMin = 0`) until paid volume justifies a warm worker.
-- **NFR-SEC-01:** All R2 uploads and downloads use presigned URLs (≤ 15-min TTL); worker callbacks are verified via HMAC-SHA256.
+- **NFR-SEC-01:** All R2 uploads and downloads use presigned URLs (≤ 15-min TTL); RunPod completion callbacks are verified against `/status` before changing credits, and any worker-initiated progress callback uses HMAC-SHA256.
 
 ---
 
