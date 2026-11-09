@@ -68,6 +68,137 @@ body {
   animation: parecut-spin 700ms linear infinite;
 }
 
+.markdown {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--color-on-surface);
+  overflow-wrap: anywhere;
+}
+
+.markdown > :first-child {
+  margin-top: 0;
+}
+
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4 {
+  margin: 1.5em 0 0.5em;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-on-surface);
+}
+
+.markdown h1 {
+  font-size: 22px;
+  line-height: 28px;
+}
+
+.markdown h2 {
+  font-size: 18px;
+  line-height: 24px;
+}
+
+.markdown h3 {
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.markdown p,
+.markdown ul,
+.markdown ol,
+.markdown blockquote,
+.markdown pre,
+.markdown table {
+  margin: 0.75em 0;
+}
+
+.markdown ul,
+.markdown ol {
+  padding-left: 1.25rem;
+}
+
+.markdown ul {
+  list-style: disc;
+}
+
+.markdown ol {
+  list-style: decimal;
+}
+
+.markdown li {
+  margin: 0.25em 0;
+}
+
+.markdown a {
+  color: var(--color-on-surface);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.markdown strong {
+  font-weight: 600;
+}
+
+.markdown code {
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: var(--color-surface-container-high);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.markdown pre {
+  overflow-x: auto;
+  padding: 1rem;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 8px;
+  background: var(--color-surface-container-lowest);
+}
+
+.markdown pre code {
+  padding: 0;
+  background: transparent;
+  font-size: 12px;
+}
+
+.markdown blockquote {
+  padding-left: 1rem;
+  border-left: 2px solid var(--color-outline-variant);
+  color: var(--color-on-surface-variant);
+}
+
+.markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.markdown th,
+.markdown td {
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--color-outline-variant);
+  text-align: left;
+  vertical-align: top;
+}
+
+.markdown th {
+  background: var(--color-surface-container-high);
+  font-weight: 500;
+}
+
+.markdown hr {
+  margin: 1.25rem 0;
+  border: 0;
+  border-top: 1px solid var(--color-outline-variant);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

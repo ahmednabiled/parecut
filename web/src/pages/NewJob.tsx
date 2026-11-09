@@ -1,11 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  useEffect,
-  useRef,
-  useState,
-  type FormEvent,
-  type ReactNode,
-} from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ApiError, apiFetch } from "../api/client";
 import type {
@@ -15,6 +9,7 @@ import type {
   ProfileResponse,
 } from "../api/types";
 import Dropzone from "../components/Dropzone";
+import Panel from "../components/Panel";
 import PipelineToggles from "../components/PipelineToggles";
 import { readAudioDuration, validateUploadFile } from "../lib/audio";
 import { estimateCredits, validatePipeline } from "../lib/credits";
@@ -34,28 +29,6 @@ const DEFAULT_PIPELINE: PipelineConfig = {
 
 const fieldClass =
   "h-12 w-full rounded border border-outline bg-transparent px-4 text-[15px] text-on-surface transition-[border-color,background-color] duration-150 ease-standard hover:border-on-surface-variant focus:border-on-surface";
-
-function Panel({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description?: string;
-  children: ReactNode;
-}) {
-  return (
-    <section className="rounded-xl border border-outline-variant bg-surface-container p-6">
-      <h2 className="text-[15px] font-medium text-on-surface">{title}</h2>
-      {description ? (
-        <p className="mt-1 max-w-[52ch] text-[13px] leading-5 text-on-surface-variant">
-          {description}
-        </p>
-      ) : null}
-      <div className="mt-5">{children}</div>
-    </section>
-  );
-}
 
 function putFile(
   xhr: XMLHttpRequest,
