@@ -18,4 +18,29 @@ describe("apiFetch", () => {
     });
     expect(ApiError).toBeDefined();
   });
+
+  it("keeps the 402 shortfall payload for inline handling", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            detail: "Insufficient credits",
+            required_minutes: 3,
+            available_minutes: 1,
+          }),
+          {
+            status: 402,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+      ),
+    );
+
+    await expect(apiFetch("/api/jobs")).rejects.toMatchObject({
+      status: 402,
+      message: "Insufficient credits",
+      payload: { required_minutes: 3, available_minutes: 1 },
+    });
+  });
 });

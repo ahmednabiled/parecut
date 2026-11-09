@@ -3,6 +3,7 @@ import RequireAuth from "./auth/RequireAuth";
 import AppShell from "./components/AppShell";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
+import NewJob from "./pages/NewJob";
 import Register from "./pages/Register";
 import Settings from "./pages/Settings";
 
@@ -33,15 +34,7 @@ export default function AppRoutes() {
         }
       >
         <Route index element={<Dashboard />} />
-        <Route
-          path="new"
-          element={
-            <ComingSoon
-              title="New job"
-              detail="Upload, pipeline selection, and credit estimate arrive in the next build."
-            />
-          }
-        />
+        <Route path="new" element={<NewJob />} />
         <Route
           path="jobs/:id"
           element={
