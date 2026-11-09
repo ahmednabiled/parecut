@@ -13,6 +13,8 @@ def settings(tmp_path):
         secret_key="test-secret-key-with-at-least-32-bytes",
         database_url=f"sqlite+aiosqlite:///{tmp_path / 'test.db'}",
         storage_dir=tmp_path / "storage",
+        storage_backend="local",
+        pipeline_runner="mock",
         mock_stage_delay_ms=0,
         seed_demo=False,
     )

@@ -122,6 +122,7 @@ def test_r2_storage_is_selected_by_settings(tmp_path):
         database_url=f"sqlite+aiosqlite:///{tmp_path / 'test.db'}",
         storage_dir=tmp_path / "storage",
         storage_backend="r2",
+        pipeline_runner="mock",
         r2_account_id="account",
         r2_access_key_id="key",
         r2_secret_access_key="secret",

@@ -17,6 +17,8 @@ async def test_seed_is_idempotent_and_logs_in(tmp_path):
         secret_key="test-secret-key-with-at-least-32-bytes",
         database_url=f"sqlite+aiosqlite:///{tmp_path / 'db.sqlite'}",
         storage_dir=tmp_path / "storage",
+        storage_backend="local",
+        pipeline_runner="mock",
         mock_stage_delay_ms=0,
         seed_demo=True,
     )
@@ -48,6 +50,8 @@ async def test_reconcile_marks_running_job_failed_and_refunds(tmp_path):
         secret_key="test-secret-key-with-at-least-32-bytes",
         database_url=f"sqlite+aiosqlite:///{tmp_path / 'db.sqlite'}",
         storage_dir=tmp_path / "storage",
+        storage_backend="local",
+        pipeline_runner="mock",
         seed_demo=False,
     )
     app = create_app(settings)

@@ -233,6 +233,7 @@ async def test_runpod_runner_is_selected_by_settings(tmp_path):
         secret_key="test-secret-key-with-at-least-32-bytes",
         database_url=f"sqlite+aiosqlite:///{tmp_path / 'test.db'}",
         storage_dir=tmp_path / "storage",
+        storage_backend="local",
         pipeline_runner="runpod",
         runpod_api_key="key",
         runpod_audio_endpoint_id="ep-audio",
