@@ -2,7 +2,7 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -25,6 +25,13 @@ from app.services.roughcut import regenerate_cut_outputs
 from app.storage import ObjectStorage, get_storage
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
+
+TEXT_MEDIA_TYPES = {
+    "md": "text/markdown",
+    "srt": "application/x-subrip",
+    "vtt": "text/vtt",
+    "json": "application/json",
+}
 
 
 @router.post("", response_model=JobRead, status_code=status.HTTP_201_CREATED)
@@ -194,9 +201,20 @@ async def download_artifact(
             status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found"
         )
 
+    filename = Path(artifact.r2_key).name
+    if artifact.format in TEXT_MEDIA_TYPES:
+        data = await storage.get(artifact.r2_key)
+        return Response(
+            content=data,
+            media_type=TEXT_MEDIA_TYPES[artifact.format],
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+            },
+        )
+
     url = storage.signed_download_url(
         artifact.r2_key,
-        Path(artifact.r2_key).name,
+        filename,
         settings.download_url_ttl_seconds,
     )
     return RedirectResponse(url=url, status_code=status.HTTP_302_FOUND)

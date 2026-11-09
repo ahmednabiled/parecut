@@ -26,6 +26,34 @@ async def test_list_and_detail_return_only_own_jobs(app, client):
         assert (await other.get("/api/jobs")).json() == []
 
 
+async def test_text_artifact_download_serves_same_origin_content(app, client):
+    job = await _create_job(client)
+    key = f"jobs/{job['id']}/ROUGH-CUT.md"
+    await app.state.storage.put(key, b"# Spec\n", "text/markdown")
+    async with app.state.sessionmaker() as session:
+        artifact = JobArtifact(
+            job_id=job["id"],
+            kind="rough_cut_md",
+            label="ROUGH-CUT.md",
+            format="md",
+            r2_key=key,
+            size_bytes=7,
+        )
+        session.add(artifact)
+        await session.commit()
+        await session.refresh(artifact)
+        artifact_id = artifact.id
+
+    response = await client.get(
+        f"/api/jobs/{job['id']}/artifacts/{artifact_id}/download"
+    )
+
+    assert response.status_code == 200
+    assert response.text == "# Spec\n"
+    assert response.headers["content-type"].startswith("text/markdown")
+    assert "attachment" in response.headers["content-disposition"]
+
+
 async def test_download_redirects_to_signed_url_and_hides_foreign_artifacts(app, client):
     job = await _create_job(client)
     async with app.state.sessionmaker() as session:

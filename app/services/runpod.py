@@ -181,7 +181,7 @@ class RunpodPipelineRunner:
         expected = expected_artifacts(job.id, config)
         outputs = {
             artifact["key"]: self._absolute(
-                self._storage.signed_upload_url(artifact["key"], ttl)
+                self._storage.signed_direct_upload_url(artifact["key"], ttl)
             )
             for artifact in expected
         }

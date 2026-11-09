@@ -44,6 +44,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             endpoint_url=settings.r2_endpoint_url or "",
             access_key_id=settings.r2_access_key_id or "",
             secret_access_key=settings.r2_secret_access_key or "",
+            secret_key=settings.secret_key,
             region=settings.r2_region,
         )
     else:

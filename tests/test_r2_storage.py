@@ -5,7 +5,7 @@ from botocore.exceptions import ClientError
 
 from app.config import Settings
 from app.main import create_app
-from app.storage import R2ObjectStorage
+from app.storage import InvalidToken, R2ObjectStorage
 
 
 class FakeS3:
@@ -52,6 +52,7 @@ def make_storage(client: FakeS3 | None = None) -> R2ObjectStorage:
         endpoint_url="https://account.r2.cloudflarestorage.com",
         access_key_id="key",
         secret_access_key="secret",
+        secret_key="test-secret-key",
         client=client or FakeS3(),
     )
 
@@ -84,22 +85,34 @@ async def test_r2_exists_reraises_unexpected_client_errors():
         await make_storage(BrokenS3()).exists("jobs/1/a.wav")
 
 
-def test_r2_presigned_urls_include_bucket_and_signature():
+def test_r2_browser_upload_is_proxied_and_worker_upload_is_presigned():
     storage = R2ObjectStorage(
         bucket="parecut",
         endpoint_url="https://account.r2.cloudflarestorage.com",
         access_key_id="key",
         secret_access_key="secret",
+        secret_key="test-secret-key",
     )
 
     upload = storage.signed_upload_url("jobs/1/a.wav", 900)
+    worker_upload = storage.signed_direct_upload_url("jobs/1/b.wav", 900)
     download = storage.signed_download_url("jobs/1/a.wav", "a.wav", 900)
 
-    assert "https://account.r2.cloudflarestorage.com/parecut/jobs/1/a.wav" in upload
-    assert "X-Amz-Signature=" in upload
+    assert upload.startswith("/api/uploads/")
+    token = upload.rsplit("/", 1)[-1]
+    assert storage.verify_upload_token(token) == "jobs/1/a.wav"
+    assert "https://account.r2.cloudflarestorage.com/parecut/jobs/1/b.wav" in worker_upload
+    assert "X-Amz-Signature=" in worker_upload
     assert "https://account.r2.cloudflarestorage.com/parecut/jobs/1/a.wav" in download
     assert "X-Amz-Signature=" in download
     assert "response-content-disposition" in download
+
+
+def test_r2_rejects_tampered_upload_tokens():
+    storage = make_storage()
+
+    with pytest.raises(InvalidToken):
+        storage.verify_upload_token("not-a-token")
 
 
 def test_r2_storage_is_selected_by_settings(tmp_path):

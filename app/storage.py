@@ -43,6 +43,8 @@ class ObjectStorage(Protocol):
 
     def signed_upload_url(self, key: str, ttl_seconds: int) -> str: ...
 
+    def signed_direct_upload_url(self, key: str, ttl_seconds: int) -> str: ...
+
     def signed_download_url(self, key: str, filename: str, ttl_seconds: int) -> str: ...
 
     def verify_upload_token(self, token: str) -> str: ...
@@ -57,6 +59,43 @@ def _b64encode(data: bytes) -> str:
 def _b64decode(value: str) -> bytes:
     padding = "=" * (-len(value) % 4)
     return base64.urlsafe_b64decode(value + padding)
+
+
+class _SignedTokens:
+    def __init__(self, secret_key: str) -> None:
+        self._secret = secret_key.encode()
+
+    def sign(self, payload: dict) -> str:
+        body = _b64encode(
+            json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
+        )
+        signature = _b64encode(
+            hmac.new(self._secret, body.encode(), hashlib.sha256).digest()
+        )
+        return f"{body}.{signature}"
+
+    def verify(self, token: str, purpose: str) -> dict:
+        try:
+            body, signature = token.split(".")
+        except ValueError as exc:
+            raise InvalidToken("malformed token") from exc
+
+        expected = _b64encode(
+            hmac.new(self._secret, body.encode(), hashlib.sha256).digest()
+        )
+        if not hmac.compare_digest(signature, expected):
+            raise InvalidToken("bad signature")
+
+        try:
+            payload = json.loads(_b64decode(body))
+        except (ValueError, json.JSONDecodeError) as exc:
+            raise InvalidToken("bad payload") from exc
+
+        if payload.get("p") != purpose:
+            raise InvalidToken("wrong purpose")
+        if int(payload.get("e", 0)) < int(time.time()):
+            raise InvalidToken("expired")
+        return payload
 
 
 def _ffprobe_metadata(source: str) -> AudioMetadata | None:
@@ -99,7 +138,7 @@ class LocalObjectStorage:
     def __init__(self, root: Path, secret_key: str) -> None:
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
-        self._secret = secret_key.encode()
+        self._tokens = _SignedTokens(secret_key)
 
     def _path(self, key: str) -> Path:
         path = Path(key)
@@ -133,44 +172,17 @@ class LocalObjectStorage:
             return None
         return await asyncio.to_thread(_ffprobe_metadata, str(path))
 
-    def _sign(self, payload: dict) -> str:
-        body = _b64encode(
-            json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
-        )
-        signature = _b64encode(
-            hmac.new(self._secret, body.encode(), hashlib.sha256).digest()
-        )
-        return f"{body}.{signature}"
-
-    def _verify(self, token: str, purpose: str) -> dict:
-        try:
-            body, signature = token.split(".")
-        except ValueError as exc:
-            raise InvalidToken("malformed token") from exc
-
-        expected = _b64encode(
-            hmac.new(self._secret, body.encode(), hashlib.sha256).digest()
-        )
-        if not hmac.compare_digest(signature, expected):
-            raise InvalidToken("bad signature")
-
-        try:
-            payload = json.loads(_b64decode(body))
-        except (ValueError, json.JSONDecodeError) as exc:
-            raise InvalidToken("bad payload") from exc
-
-        if payload.get("p") != purpose:
-            raise InvalidToken("wrong purpose")
-        if int(payload.get("e", 0)) < int(time.time()):
-            raise InvalidToken("expired")
-        return payload
-
     def signed_upload_url(self, key: str, ttl_seconds: int) -> str:
-        token = self._sign({"k": key, "e": int(time.time()) + ttl_seconds, "p": "put"})
+        token = self._tokens.sign(
+            {"k": key, "e": int(time.time()) + ttl_seconds, "p": "put"}
+        )
         return f"/api/uploads/{token}"
 
+    def signed_direct_upload_url(self, key: str, ttl_seconds: int) -> str:
+        return self.signed_upload_url(key, ttl_seconds)
+
     def signed_download_url(self, key: str, filename: str, ttl_seconds: int) -> str:
-        token = self._sign(
+        token = self._tokens.sign(
             {
                 "k": key,
                 "e": int(time.time()) + ttl_seconds,
@@ -181,14 +193,14 @@ class LocalObjectStorage:
         return f"/api/uploads/download/{token}?filename={quote(filename)}"
 
     def verify_upload_token(self, token: str) -> str:
-        payload = self._verify(token, "put")
+        payload = self._tokens.verify(token, "put")
         key = payload.get("k")
         if not isinstance(key, str):
             raise InvalidToken("missing key")
         return key
 
     def verify_download_token(self, token: str) -> tuple[str, str]:
-        payload = self._verify(token, "get")
+        payload = self._tokens.verify(token, "get")
         key = payload.get("k")
         if not isinstance(key, str):
             raise InvalidToken("missing key")
@@ -203,12 +215,14 @@ class R2ObjectStorage:
         endpoint_url: str,
         access_key_id: str,
         secret_access_key: str,
+        secret_key: str,
         region: str = "auto",
         client: Any | None = None,
     ) -> None:
         if not bucket or not endpoint_url or not access_key_id or not secret_access_key:
             raise ValueError("R2 storage requires bucket, endpoint, and credentials")
         self.bucket = bucket
+        self._tokens = _SignedTokens(secret_key)
         self._client = client or boto3.client(
             "s3",
             endpoint_url=endpoint_url,
@@ -269,6 +283,12 @@ class R2ObjectStorage:
         return await asyncio.to_thread(_ffprobe_metadata, url)
 
     def signed_upload_url(self, key: str, ttl_seconds: int) -> str:
+        token = self._tokens.sign(
+            {"k": key, "e": int(time.time()) + ttl_seconds, "p": "put"}
+        )
+        return f"/api/uploads/{token}"
+
+    def signed_direct_upload_url(self, key: str, ttl_seconds: int) -> str:
         return self._client.generate_presigned_url(
             "put_object",
             Params={"Bucket": self.bucket, "Key": key},
@@ -287,7 +307,11 @@ class R2ObjectStorage:
         )
 
     def verify_upload_token(self, token: str) -> str:
-        raise InvalidToken("R2 storage uses direct uploads")
+        payload = self._tokens.verify(token, "put")
+        key = payload.get("k")
+        if not isinstance(key, str):
+            raise InvalidToken("missing key")
+        return key
 
     def verify_download_token(self, token: str) -> tuple[str, str]:
         raise InvalidToken("R2 storage uses direct downloads")
