@@ -19,6 +19,7 @@ RUN pip install --no-cache-dir \
     "loguru>=0.5" \
     "appdirs>=1.4,<2.0" \
     "requests>=2.27,<3.0" \
+    "soundfile==0.14.0" \
     "deepfilterlib==0.5.6"
 
 # DeepFilterNet 0.5.6 pins packaging<24, which conflicts with runpod's
