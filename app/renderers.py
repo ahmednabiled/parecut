@@ -1,4 +1,6 @@
 import json
+import re
+from difflib import SequenceMatcher
 from typing import Literal
 
 from parecut_engine.schemas import CutRange, RoughCutMeta, SpeakerRole, Transcript
@@ -52,12 +54,94 @@ def _vtt_time(seconds: float) -> str:
     return format_clock(seconds)
 
 
+RESTART_PHRASES = (
+    "let me go again",
+    "let me start over",
+    "start over",
+    "start again",
+    "one more time",
+    "take two",
+)
+
+RETAKE_SIMILARITY = 0.85
+RETAKE_WINDOW_SECONDS = 30.0
+
+
+def _normalized_words(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9']+", text.lower())
+
+
+def _is_restart(text: str) -> bool:
+    normalized = " ".join(_normalized_words(text))
+    return any(phrase in normalized for phrase in RESTART_PHRASES)
+
+
+def _is_prefix(earlier: str, later: str) -> bool:
+    first = _normalized_words(earlier)
+    second = _normalized_words(later)
+    return (
+        len(first) >= 3
+        and len(second) > len(first)
+        and second[: len(first)] == first
+    )
+
+
+def _similarity(first: str, second: str) -> float:
+    return SequenceMatcher(
+        None,
+        " ".join(_normalized_words(first)),
+        " ".join(_normalized_words(second)),
+    ).ratio()
+
+
+def _false_start_indices(segments) -> set[int]:
+    indices: set[int] = set()
+    for index, segment in enumerate(segments):
+        if _is_restart(segment.text):
+            indices.add(index)
+            continue
+        if index + 1 < len(segments):
+            following = segments[index + 1]
+            incomplete = not segment.text.rstrip().endswith((".", "!", "?"))
+            if (
+                incomplete
+                and following.speaker == segment.speaker
+                and _is_prefix(segment.text, following.text)
+            ):
+                indices.add(index)
+    return indices
+
+
+def _retake_indices(segments, false_starts: set[int]) -> set[int]:
+    indices: set[int] = set()
+    for index, segment in enumerate(segments):
+        if index in false_starts or index in indices:
+            continue
+        for later_index in range(index + 1, len(segments)):
+            later = segments[later_index]
+            if later.start - segment.end > RETAKE_WINDOW_SECONDS:
+                break
+            if later_index in false_starts or later.speaker != segment.speaker:
+                continue
+            if _similarity(segment.text, later.text) >= RETAKE_SIMILARITY:
+                if len(later.text) >= len(segment.text):
+                    indices.add(index)
+                else:
+                    indices.add(later_index)
+                break
+    return indices
+
+
 def build_cut_plan(
     transcript: Transcript, roles: dict[str, SpeakerRole]
 ) -> list[CutRange]:
     plan: list[CutRange] = []
     cursor = 0.0
-    for segment in sorted(transcript.segments, key=lambda item: item.start):
+    segments = sorted(transcript.segments, key=lambda item: item.start)
+    false_starts = _false_start_indices(segments)
+    retakes = _retake_indices(segments, false_starts)
+
+    for index, segment in enumerate(segments):
         if segment.start - cursor > 1e-6:
             plan.append(
                 CutRange(
@@ -67,30 +151,29 @@ def build_cut_plan(
                     reason="SILENCE",
                 )
             )
+
         role = roles.get(segment.speaker, "presenter")
         if role == "feeder":
-            plan.append(
-                CutRange(
-                    start=segment.start,
-                    end=segment.end,
-                    action="remove",
-                    reason="FEEDER_PROMPT",
-                    speaker=segment.speaker,
-                    text=segment.text,
-                )
-            )
+            action, reason = "remove", "FEEDER_PROMPT"
+        elif index in false_starts:
+            action, reason = "remove", "FALSE_START"
+        elif index in retakes:
+            action, reason = "remove", "RETAKE"
         else:
-            plan.append(
-                CutRange(
-                    start=segment.start,
-                    end=segment.end,
-                    action="keep",
-                    reason="BEST_TAKE",
-                    speaker=segment.speaker,
-                    text=segment.text,
-                )
+            action, reason = "keep", "BEST_TAKE"
+
+        plan.append(
+            CutRange(
+                start=segment.start,
+                end=segment.end,
+                action=action,
+                reason=reason,
+                speaker=segment.speaker,
+                text=segment.text,
             )
+        )
         cursor = max(cursor, segment.end)
+
     return plan
 
 

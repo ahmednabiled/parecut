@@ -7,6 +7,7 @@ from app.renderers import (
     frame_number,
     render_transcript,
 )
+from parecut_engine.schemas import Transcript, TranscriptSegment
 
 
 def test_timecode_conversions():
@@ -43,6 +44,90 @@ def test_cut_plan_marks_silence_and_feeder():
     assert any(range_.reason == "SILENCE" for range_ in plan)
     assert any(range_.reason == "FEEDER_PROMPT" for range_ in plan)
     assert any(range_.action == "keep" for range_ in plan)
+
+
+def test_cut_plan_removes_restart_false_start():
+    transcript = demo_transcript(24.72)
+    roles = {"SPEAKER_01": "presenter", "SPEAKER_02": "presenter"}
+
+    plan = build_cut_plan(transcript, roles)
+    false_starts = [
+        range_
+        for range_ in plan
+        if range_.action == "remove" and range_.reason == "FALSE_START"
+    ]
+
+    assert any("let me go again" in (range_.text or "") for range_ in false_starts)
+
+
+def test_cut_plan_removes_prefix_false_start():
+    transcript = Transcript(
+        speakers=["S"],
+        segments=[
+            TranscriptSegment(
+                speaker="S",
+                start=0.0,
+                end=2.0,
+                text="Today we're going to talk",
+            ),
+            TranscriptSegment(
+                speaker="S",
+                start=3.0,
+                end=6.0,
+                text="Today we're going to talk about three-point lighting.",
+            ),
+        ],
+    )
+
+    plan = build_cut_plan(transcript, {"S": "presenter"})
+
+    assert [(r.start, r.end) for r in plan if r.reason == "FALSE_START"] == [
+        (0.0, 2.0)
+    ]
+    assert any(r.action == "keep" and r.start == 3.0 for r in plan)
+
+
+def test_cut_plan_keeps_later_same_speaker_retake():
+    transcript = Transcript(
+        speakers=["S"],
+        segments=[
+            TranscriptSegment(
+                speaker="S",
+                start=0.0,
+                end=2.0,
+                text="The key light is the main light source.",
+            ),
+            TranscriptSegment(
+                speaker="S",
+                start=3.0,
+                end=6.0,
+                text="The key light is the main light source on set.",
+            ),
+        ],
+    )
+
+    plan = build_cut_plan(transcript, {"S": "presenter"})
+
+    assert [(r.start, r.end) for r in plan if r.reason == "RETAKE"] == [(0.0, 2.0)]
+    assert any(r.action == "keep" and r.start == 3.0 for r in plan)
+
+
+def test_cut_plan_does_not_treat_apology_as_false_start():
+    transcript = Transcript(
+        speakers=["S"],
+        segments=[
+            TranscriptSegment(
+                speaker="S",
+                start=0.0,
+                end=3.0,
+                text="Sorry for the delay, the key light is the main source.",
+            )
+        ],
+    )
+
+    plan = build_cut_plan(transcript, {"S": "presenter"})
+
+    assert not [r for r in plan if r.reason == "FALSE_START"]
 
 
 def test_demo_transcript_scales_to_duration():

@@ -37,4 +37,4 @@ def test_rough_cut_has_timecodes_reasons_and_agent_prompt():
     assert "SILENCE" in output
     assert "mediaPool.AppendToTimeline" in output
     assert "A001_C014_interview.mov" in output
-    assert "39.3%" in output  # 9.72 s removed of 24.72 s
+    assert "51.5%" in output  # 12.72 s removed of 24.72 s, including the false start
