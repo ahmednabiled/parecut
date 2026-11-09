@@ -56,17 +56,24 @@ Complete:
 - Runpod queue endpoint `parecut-audio` with a remote stub worker
 - `RunpodPipelineRunner`, `HttpRunpodClient`, and `jobs.runpod_job_id`
 - End-to-end R2 + Runpod job: 15 artifacts, downloads, and `ROUGH-CUT.md`
+- Local `.env` switched to `r2` + `runpod`; a UI-created job was submitted to
+  Runpod, recorded its `runpod_job_id`, and completed with 15 R2 artifacts
+- R2 browser uploads proxied through FastAPI, with worker artifact uploads still using
+  direct presigned R2 URLs; text artifacts served same-origin for previews and copy
 
 Pending:
 
 - Task 20: FastAPI serving the built SPA, README polish, final verification
 - Real audio models in the worker (the current worker is a contract stub)
+- Real rough-cut rules and LLM take selection (the current cut removes silence and feeder lines only)
 - Pin the worker image to a `sha-<short>` tag for production releases
 - `parecut-separate` endpoint
-- R2 bucket CORS for browser uploads
-- Redis, LLM take selection, Stripe, OAuth, retention
+- Optional R2 bucket CORS if direct browser uploads replace the FastAPI proxy
+- Redis, Stripe, OAuth, retention
 
 Both `/new` and `/jobs/:id` are live. The new job page uploads immediately on file selection, keeps the returned `upload_key` across a 402 retry, and navigates to the job detail route after creation. The job detail page streams stage events over SSE, keeps a 3-second polling fallback, rebuilds from the saved snapshot after a reload, and regenerates after-cut artifacts synchronously when speaker roles change.
+
+The local `.env` now selects the real R2 + Runpod path. Browser uploads go to FastAPI and are written to R2 server-side, so they do not depend on R2 CORS. The worker still receives direct presigned R2 URLs for its outputs, and text artifacts are served by FastAPI so Markdown previews and copy work without cross-origin reads.
 
 ## Stack
 
@@ -99,7 +106,12 @@ Job progress is stored in `jobs.stage_states`, so reloads and SSE reconnects reb
 - The UI is monochrome Material 3. No gradients, glass, glow, or amber accent. Error red is the only semantic color.
 - The auth page uses the script `Pare Cut` logo alone. The app sidebar uses the same logo alone. The P mark is only the favicon.
 - The cover image is retained at `web/public/brand/cover.webp` but is not currently placed in the interface.
-- GPU inference will use Runpod Serverless, not Modal. See `docs/adr/0001-runpod-gpu-inference.md`.
+- GPU inference uses Runpod Serverless, not Modal. See `docs/adr/0001-runpod-gpu-inference.md`.
+- The active local `.env` uses `PARECUT_STORAGE_BACKEND=r2` and `PARECUT_PIPELINE_RUNNER=runpod`.
+  `.env.example` keeps the local/mock defaults for a no-credentials checkout.
+- Browser uploads are proxied through FastAPI for R2 because the bucket token cannot manage
+  CORS. The `ObjectStorage` seam has separate `signed_upload_url` (browser) and
+  `signed_direct_upload_url` (worker outputs) methods.
 - The repository is public and Apache-2.0 licensed.
 
 ## Runpod integration (backend and stub worker in place)
@@ -116,6 +128,9 @@ Implemented:
   0-2 workers, 10s idle timeout, 4h execution timeout, FlashBoot on
 - End-to-end test: the runner submitted a job, the worker uploaded 15 artifacts to R2,
   the backend wrote all artifact rows, downloads matched the source, and credits settled
+- Active runtime test after wiring: the UI upload was proxied to R2, `POST /api/jobs`
+  submitted to `parecut-audio` (`runpod_job_id` recorded), the worker ran and the job
+  completed in about 27 seconds with 15 artifacts labeled `Stub — ...`
 
 Worker image:
 
@@ -193,6 +208,8 @@ At the time of writing:
 - LAN: http://192.168.1.53:5173
 - Demo login: `demo@parecut.app` / `parecut-demo`
 - The backend seeds one demo user and one completed demo job with 15 artifacts
+- The active local `.env` uses R2 storage and the Runpod runner
+- The API was restarted with `--reload` after the Runpod wiring change
 
 Servers are development processes and may be stopped. Restart them with the commands below.
 
@@ -221,12 +238,14 @@ Open http://localhost:5173.
 Default local data:
 
 - Database: `var/parecut.db`
-- Storage: `var/storage/`
+- Local storage fallback: `var/storage/`
 - Env prefix: `PARECUT_`; see `.env.example`
+- The active `.env` uses `PARECUT_STORAGE_BACKEND=r2` and `PARECUT_PIPELINE_RUNNER=runpod`;
+  `.env.example` keeps the local/mock defaults for a plain checkout
 
 ## Verification
 
-- Backend: `uv run pytest -q` -> 54 passed
+- Backend: `uv run pytest -q` -> 56 passed
 - Frontend: `cd web && npm test` -> 19 passed
 - Typecheck: `cd web && npm run typecheck`
 - Build: `cd web && npm run build` (one chunk-size warning from react-markdown)
@@ -244,6 +263,12 @@ artifacts. Changing `SPEAKER_02` to Feeder regenerated the after-cut transcript 
 `ROUGH-CUT.md` without a reload; the speaker map changed to `REMOVE ALL`, the after
 transcript contained only `SPEAKER_01`, the copy button reported `Copied`, and the
 download endpoint returned the Markdown specification with a 200.
+
+The Runpod runtime was verified after switching `.env` to R2 + Runpod. A UI job was
+submitted with a real `runpod_job_id`, Runpod showed it in queue and then running, the
+backend recorded completion about 27 seconds later, and 15 artifacts were written to
+R2. The job detail page showed `Stub — ...` labels, the text previews and copy worked
+through the same-origin endpoint, and an audio artifact loaded with duration 20s.
 
 ## Important files
 
@@ -275,6 +300,7 @@ download endpoint returned the Markdown specification with a 200.
 - `0734d68`: Runpod docs verification
 - `259eb66`: Task 18 new job flow
 - `9f65b91`: Task 19 live job detail
+- `b78fb0e`: R2 upload proxy and same-origin text artifacts
 
 The progress file itself adds one more documentation commit after these.
 
@@ -287,12 +313,11 @@ The progress file itself adds one more documentation commit after these.
    - Demucs for music separation
    - MossFormer2-SS and Resemble Enhance as optional stages
    - Generate real before/after transcripts and `ROUGH-CUT.md`
-2. Push the worker image to a persistent registry, deploy it to `parecut-audio`, and create
-   `parecut-separate`.
-3. Add R2 bucket CORS for browser uploads, then switch the app to
-   `PARECUT_STORAGE_BACKEND=r2` and `PARECUT_PIPELINE_RUNNER=runpod`.
-4. Task 20: serve the built SPA from FastAPI, finish README and manual smoke test.
-5. Implement the real rough-cut engine (timecodes, rules, LLM take selection).
+2. Implement the real rough-cut engine (rule pass first, LLM take selection later) so
+   false starts, retakes, and dead air are removed without manually marking a feeder.
+3. Task 20: serve the built SPA from FastAPI, finish README and manual smoke test.
+4. Pin the worker image to `sha-<short>`, deploy it, and create `parecut-separate`.
+5. Optional: add R2 CORS if direct browser uploads should replace the FastAPI proxy.
 6. Add Redis, Stripe, OAuth, and retention.
 
 ## Non-negotiables
