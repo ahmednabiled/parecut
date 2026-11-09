@@ -5,7 +5,7 @@ ENV PIP_NO_CACHE_DIR=1
 WORKDIR /worker
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg libsndfile1 libgomp1 \
+    && apt-get install -y --no-install-recommends ffmpeg libsndfile1 libgomp1 git \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu \
