@@ -53,11 +53,14 @@ Complete:
 - Monochrome Material 3 visual system with Google Sans and the Pare Cut script logo
 - Backend tests, frontend tests, typecheck, and production build
 - Cloudflare R2 storage adapter behind `ObjectStorage`, verified with real put/get/delete
-- Runpod queue endpoint `parecut-audio` with a remote stub worker
+- Runpod queue endpoint `parecut-audio` with a real DeepFilterNet3 denoising worker
 - `RunpodPipelineRunner`, `HttpRunpodClient`, and `jobs.runpod_job_id`
 - End-to-end R2 + Runpod job: 15 artifacts, downloads, and `ROUGH-CUT.md`
 - Local `.env` switched to `r2` + `runpod`; a UI-created job was submitted to
   Runpod, recorded its `runpod_job_id`, and completed with 15 R2 artifacts
+- Real noise reduction: `cleaned_audio` is DeepFilterNet3 output (48 kHz mono), not a
+  copy; `enhanced_audio` is the same denoised audio until enhancement is implemented
+- Worker image pinned on endpoint release #6 to `sha-37696ea`
 - R2 browser uploads proxied through FastAPI, with worker artifact uploads still using
   direct presigned R2 URLs; text artifacts served same-origin for previews and copy
 - Deterministic cut rules for restart false starts and same-speaker retakes; the
@@ -67,9 +70,9 @@ Complete:
 Pending:
 
 - Task 20: FastAPI serving the built SPA, README polish, final verification
-- Real audio models in the worker (the current worker is a contract stub)
+- Real enhancement, separation, diarization, and transcription in the worker
+  (DeepFilterNet3 noise reduction is live; stems and transcripts are still stubs)
 - LLM take selection on top of the deterministic false-start/retake rules
-- Pin the worker image to a `sha-<short>` tag for production releases
 - `parecut-separate` endpoint
 - Optional R2 bucket CORS if direct browser uploads replace the FastAPI proxy
 - Redis, Stripe, OAuth, retention
@@ -117,7 +120,7 @@ Job progress is stored in `jobs.stage_states`, so reloads and SSE reconnects reb
   `signed_direct_upload_url` (worker outputs) methods.
 - The repository is public and Apache-2.0 licensed.
 
-## Runpod integration (backend and stub worker in place)
+## Runpod integration (backend and DeepFilterNet3 worker in place)
 
 Implemented:
 
@@ -126,14 +129,16 @@ Implemented:
 - `R2ObjectStorage` behind `ObjectStorage`
 - `RunpodPipelineRunner` and `HttpRunpodClient` behind `PipelineRunner`
 - `jobs.runpod_job_id` added by migration `f34d11320711`
-- `runpod_app/worker.py` stub and `runpod_app/Dockerfile`
+- `runpod_app/worker.py` with DeepFilterNet3 denoising and `runpod_app/Dockerfile`
 - `parecut-audio` endpoint `yf16hg8td6au29`, queue-based, 24 GB AMPERE_24 (L4/A5000/3090),
   0-2 workers, 10s idle timeout, 4h execution timeout, FlashBoot on
 - End-to-end test: the runner submitted a job, the worker uploaded 15 artifacts to R2,
   the backend wrote all artifact rows, downloads matched the source, and credits settled
 - Active runtime test after wiring: the UI upload was proxied to R2, `POST /api/jobs`
   submitted to `parecut-audio` (`runpod_job_id` recorded), the worker ran and the job
-  completed in about 27 seconds with 15 artifacts labeled `Stub — ...`
+  completed in about 27 seconds with 15 artifacts
+- After release #6, a noisy speech job completed with `Denoised Audio (DeepFilterNet3)`
+  and `Denoised Audio (Enhancement pending)`; the other artifacts remained stubs
 
 Worker image:
 
@@ -143,16 +148,25 @@ Worker image:
   `ghcr.io/ahmednabiled/parecut-worker:sha-<short>`.
 - The repository is private, so Runpod uses the `ghcr-parecut` registry credential with a
   GitHub PAT scoped to `read:packages`.
-- The endpoint now runs `ghcr.io/ahmednabiled/parecut-worker:dev`.
+- Endpoint release #6 runs `ghcr.io/ahmednabiled/parecut-worker:sha-37696ea`.
 - The private pull was verified end to end: a fresh worker pulled the private image,
   processed a job, and uploaded 15 artifacts to R2.
-- The `dev` tag is mutable; pin `sha-<short>` for production releases.
+- Use a new `sha-<short>` release for each worker change. The `dev` tag is mutable, so
+  the endpoint is pinned to an immutable tag.
 
 Current worker:
 
-- The worker is a contract stub: it copies the source for audio artifacts and renders a
-  demo transcript and `ROUGH-CUT.md`. It does not run the real models yet.
-- Worker progress updates caused the stub to hang in Runpod. They are disabled by default;
+- Noise reduction is real: the worker converts the source to 48 kHz mono with `ffmpeg`,
+  runs DeepFilterNet3, and uploads the denoised WAV as `cleaned_audio`.
+- `enhanced_audio` currently reuses the denoised WAV and is labeled
+  `Denoised Audio (Enhancement pending)` until Resemble Enhance is added.
+- Music/speaker stems, transcripts, and `ROUGH-CUT.md` are still stub/demo content.
+- The worker image uses Python 3.11 because `deepfilterlib` has no Python 3.12 wheel.
+  It installs `ffmpeg`, `git`, `libsndfile1`, CPU torch/torchaudio 2.2.2, `soundfile`,
+  and DeepFilterNet 0.5.6. DeepFilterNet is installed with `--no-deps` because its
+  `packaging<24` pin conflicts with `runpod`'s `packaging>=26.3`.
+- DeepFilterNet3 weights are baked into the image at build time.
+- Worker progress updates still cause problems in Runpod. They are disabled by default;
   set `PARECUT_WORKER_PROGRESS=1` only after implementing them with a timeout or a safer
   progress mechanism.
 - The first private GHCR cold start was about 66 seconds, mostly image pull. FlashBoot,
@@ -273,6 +287,12 @@ backend recorded completion about 27 seconds later, and 15 artifacts were writte
 R2. The job detail page showed `Stub — ...` labels, the text previews and copy worked
 through the same-origin endpoint, and an audio artifact loaded with duration 20s.
 
+The DeepFilterNet3 path was verified with a noisy speech sample on endpoint release #6.
+The job completed with `Denoised Audio (DeepFilterNet3)` and 15 artifacts. The downloaded
+cleaned WAV had a different SHA-256 from the source, was 48 kHz mono, and the trailing
+noise floor dropped from -41.9 dB mean / -30.5 dB max to -65.9 dB mean / -47.7 dB max
+(about 24 dB of noise reduction). The UI, audio players, and downloads all worked.
+
 The deterministic cut rules were verified by regenerating that Runpod job's outputs
 through `PATCH /speakers` with both speakers still presenters. The before-cut SRT kept
 "Today we're gonna— sorry, let me go again."; the after-cut SRT dropped it; and
@@ -311,23 +331,27 @@ through `PATCH /speakers` with both speakers still presenters. The before-cut SR
 - `b78fb0e`: R2 upload proxy and same-origin text artifacts
 - `4148666`: test isolation for local/mock fixtures
 - `4144194`: false-start and retake cut rules
+- `a732a2e`: DeepFilterNet3 worker denoising
+- `0d037d0`: install git for DeepFilterNet logging
+- `37696ea`: install soundfile backend for torchaudio
 
 The progress file itself adds one more documentation commit after these.
 
 ## Next actions in order
 
-1. Replace the stub worker with the real model pipeline.
-   - DeepFilterNet3 for noise reduction
-   - Nemotron-3-Diarization for speaker attribution
+1. Add the remaining real models to the worker.
    - WhisperX large-v3-turbo for transcription and word timing
+   - Nemotron-3-Diarization for speaker attribution
    - Demucs for music separation
-   - MossFormer2-SS and Resemble Enhance as optional stages
+   - Resemble Enhance for the enhancement stage
+   - MossFormer2-SS as an optional stage
    - Generate real before/after transcripts and `ROUGH-CUT.md`
+   - DeepFilterNet3 noise reduction is already live
 2. Add LLM take selection on top of the deterministic rule pass. The current rules
    remove silence, feeder lines, restart false starts, and same-speaker retakes.
    Rebuild the worker image after cut-rule changes so Runpod uses the same rules.
 3. Task 20: serve the built SPA from FastAPI, finish README and manual smoke test.
-4. Pin the worker image to `sha-<short>`, deploy it, and create `parecut-separate`.
+4. Create `parecut-separate`; publish a new `sha-<short>` worker release for each change.
 5. Optional: add R2 CORS if direct browser uploads should replace the FastAPI proxy.
 6. Add Redis, Stripe, OAuth, and retention.
 
