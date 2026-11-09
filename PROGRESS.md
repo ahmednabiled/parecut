@@ -60,12 +60,15 @@ Complete:
   Runpod, recorded its `runpod_job_id`, and completed with 15 R2 artifacts
 - R2 browser uploads proxied through FastAPI, with worker artifact uploads still using
   direct presigned R2 URLs; text artifacts served same-origin for previews and copy
+- Deterministic cut rules for restart false starts and same-speaker retakes; the
+  after-cut transcript and `ROUGH-CUT.md` now differ from the before transcript even
+  when every speaker is a presenter
 
 Pending:
 
 - Task 20: FastAPI serving the built SPA, README polish, final verification
 - Real audio models in the worker (the current worker is a contract stub)
-- Real rough-cut rules and LLM take selection (the current cut removes silence and feeder lines only)
+- LLM take selection on top of the deterministic false-start/retake rules
 - Pin the worker image to a `sha-<short>` tag for production releases
 - `parecut-separate` endpoint
 - Optional R2 bucket CORS if direct browser uploads replace the FastAPI proxy
@@ -245,7 +248,7 @@ Default local data:
 
 ## Verification
 
-- Backend: `uv run pytest -q` -> 56 passed
+- Backend: `uv run pytest -q` -> 60 passed
 - Frontend: `cd web && npm test` -> 19 passed
 - Typecheck: `cd web && npm run typecheck`
 - Build: `cd web && npm run build` (one chunk-size warning from react-markdown)
@@ -269,6 +272,11 @@ submitted with a real `runpod_job_id`, Runpod showed it in queue and then runnin
 backend recorded completion about 27 seconds later, and 15 artifacts were written to
 R2. The job detail page showed `Stub — ...` labels, the text previews and copy worked
 through the same-origin endpoint, and an audio artifact loaded with duration 20s.
+
+The deterministic cut rules were verified by regenerating that Runpod job's outputs
+through `PATCH /speakers` with both speakers still presenters. The before-cut SRT kept
+"Today we're gonna— sorry, let me go again."; the after-cut SRT dropped it; and
+`ROUGH-CUT.md` listed it as a `FALSE_START` in the remove table and audit log.
 
 ## Important files
 
@@ -301,6 +309,8 @@ through the same-origin endpoint, and an audio artifact loaded with duration 20s
 - `259eb66`: Task 18 new job flow
 - `9f65b91`: Task 19 live job detail
 - `b78fb0e`: R2 upload proxy and same-origin text artifacts
+- `4148666`: test isolation for local/mock fixtures
+- `4144194`: false-start and retake cut rules
 
 The progress file itself adds one more documentation commit after these.
 
@@ -313,8 +323,9 @@ The progress file itself adds one more documentation commit after these.
    - Demucs for music separation
    - MossFormer2-SS and Resemble Enhance as optional stages
    - Generate real before/after transcripts and `ROUGH-CUT.md`
-2. Implement the real rough-cut engine (rule pass first, LLM take selection later) so
-   false starts, retakes, and dead air are removed without manually marking a feeder.
+2. Add LLM take selection on top of the deterministic rule pass. The current rules
+   remove silence, feeder lines, restart false starts, and same-speaker retakes.
+   Rebuild the worker image after cut-rule changes so Runpod uses the same rules.
 3. Task 20: serve the built SPA from FastAPI, finish README and manual smoke test.
 4. Pin the worker image to `sha-<short>`, deploy it, and create `parecut-separate`.
 5. Optional: add R2 CORS if direct browser uploads should replace the FastAPI proxy.
