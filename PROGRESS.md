@@ -47,6 +47,9 @@ Complete:
 - React shell with login, register, dashboard, and settings
 - New job flow at `/new`: drag-and-drop upload with XHR progress, pipeline toggles,
   enhancement mix, FPS select, live credit estimate, and inline 402 shortfall handling
+- Job detail at `/jobs/:id`: live SSE stage timeline with polling fallback, speaker-role
+  editor with PATCH regeneration, audio players, before/after transcripts, rendered
+  `ROUGH-CUT.md`, downloads, and copy-for-coding-agent
 - Monochrome Material 3 visual system with Google Sans and the Pare Cut script logo
 - Backend tests, frontend tests, typecheck, and production build
 - Cloudflare R2 storage adapter behind `ObjectStorage`, verified with real put/get/delete
@@ -56,7 +59,6 @@ Complete:
 
 Pending:
 
-- Task 19: Job detail UI (SSE timeline, speaker editor, artifact tabs, copy and download)
 - Task 20: FastAPI serving the built SPA, README polish, final verification
 - Real audio models in the worker (the current worker is a contract stub)
 - Pin the worker image to a `sha-<short>` tag for production releases
@@ -64,7 +66,7 @@ Pending:
 - R2 bucket CORS for browser uploads
 - Redis, LLM take selection, Stripe, OAuth, retention
 
-The backend already supports the flows that Task 19 needs. `/new` is live; `/jobs/:id` is still an honest "Coming soon" placeholder. The new job page uploads immediately on file selection, keeps the returned `upload_key` across a 402 retry, and navigates to the job detail route after creation.
+Both `/new` and `/jobs/:id` are live. The new job page uploads immediately on file selection, keeps the returned `upload_key` across a 402 retry, and navigates to the job detail route after creation. The job detail page streams stage events over SSE, keeps a 3-second polling fallback, rebuilds from the saved snapshot after a reload, and regenerates after-cut artifacts synchronously when speaker roles change.
 
 ## Stack
 
@@ -225,16 +227,23 @@ Default local data:
 ## Verification
 
 - Backend: `uv run pytest -q` -> 54 passed
-- Frontend: `cd web && npm test` -> 13 passed
+- Frontend: `cd web && npm test` -> 19 passed
 - Typecheck: `cd web && npm run typecheck`
-- Build: `cd web && npm run build`
+- Build: `cd web && npm run build` (one chunk-size warning from react-markdown)
 
 The SSE test uses a finite stream because httpx's ASGITransport buffers the entire response. Live delivery was manually verified in the running app.
 
-Task 18 was also smoke-tested in Chrome: login, upload `demo_interview.wav`, see the
+Task 18 was smoke-tested in Chrome: login, upload `demo_interview.wav`, see the
 20s duration and 1-minute estimate, create the job, and watch it complete with 15
 artifacts. Unsupported file types and the transcription/rough-cut dependency were
 verified in the browser as well.
+
+Task 19 was smoke-tested in the browser against a completed job and a fresh running
+job. The fresh job updated from `Running` through each stage to `Completed` with 15
+artifacts. Changing `SPEAKER_02` to Feeder regenerated the after-cut transcript and
+`ROUGH-CUT.md` without a reload; the speaker map changed to `REMOVE ALL`, the after
+transcript contained only `SPEAKER_01`, the copy button reported `Copied`, and the
+download endpoint returned the Markdown specification with a 200.
 
 ## Important files
 
@@ -265,6 +274,7 @@ verified in the browser as well.
 - `1c4eb6a`: Runpod architecture
 - `0734d68`: Runpod docs verification
 - `259eb66`: Task 18 new job flow
+- `9f65b91`: Task 19 live job detail
 
 The progress file itself adds one more documentation commit after these.
 
@@ -281,14 +291,9 @@ The progress file itself adds one more documentation commit after these.
    `parecut-separate`.
 3. Add R2 bucket CORS for browser uploads, then switch the app to
    `PARECUT_STORAGE_BACKEND=r2` and `PARECUT_PIPELINE_RUNNER=runpod`.
-4. Task 19: build `/jobs/:id`.
-   - SSE stage timeline
-   - Speaker role editor with PATCH regeneration
-   - Tabs for audio, before transcript, after transcript, and `ROUGH-CUT.md`
-   - Download buttons and copy-for-agent
-5. Task 20: serve the built SPA from FastAPI, finish README and manual smoke test.
-6. Implement the real rough-cut engine (timecodes, rules, LLM take selection).
-7. Add Redis, Stripe, OAuth, and retention.
+4. Task 20: serve the built SPA from FastAPI, finish README and manual smoke test.
+5. Implement the real rough-cut engine (timecodes, rules, LLM take selection).
+6. Add Redis, Stripe, OAuth, and retention.
 
 ## Non-negotiables
 
