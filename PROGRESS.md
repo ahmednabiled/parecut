@@ -1,6 +1,6 @@
 # Parecut Progress and Handoff
 
-Last updated: 2026-11-08
+Last updated: 2026-11-09
 
 This file is the compact handoff for the project. It records what was built, why, where it lives, and what comes next. A new session should read this file first, then the documents listed under "Source of truth".
 
@@ -45,6 +45,8 @@ Complete:
 - Speaker-role override that regenerates after-cut outputs
 - Idempotent demo seed and demo account
 - React shell with login, register, dashboard, and settings
+- New job flow at `/new`: drag-and-drop upload with XHR progress, pipeline toggles,
+  enhancement mix, FPS select, live credit estimate, and inline 402 shortfall handling
 - Monochrome Material 3 visual system with Google Sans and the Pare Cut script logo
 - Backend tests, frontend tests, typecheck, and production build
 - Cloudflare R2 storage adapter behind `ObjectStorage`, verified with real put/get/delete
@@ -54,7 +56,6 @@ Complete:
 
 Pending:
 
-- Task 18: New job UI (upload, pipeline toggles, FPS, credit estimate, 402 handling)
 - Task 19: Job detail UI (SSE timeline, speaker editor, artifact tabs, copy and download)
 - Task 20: FastAPI serving the built SPA, README polish, final verification
 - Real audio models in the worker (the current worker is a contract stub)
@@ -63,7 +64,7 @@ Pending:
 - R2 bucket CORS for browser uploads
 - Redis, LLM take selection, Stripe, OAuth, retention
 
-The backend already supports the flows that Tasks 18 and 19 need. The UI routes `/new` and `/jobs/:id` are honest "Coming soon" placeholders.
+The backend already supports the flows that Task 19 needs. `/new` is live; `/jobs/:id` is still an honest "Coming soon" placeholder. The new job page uploads immediately on file selection, keeps the returned `upload_key` across a 402 retry, and navigates to the job detail route after creation.
 
 ## Stack
 
@@ -223,12 +224,17 @@ Default local data:
 
 ## Verification
 
-- Backend: `uv run pytest -q` -> 42 passed
-- Frontend: `cd web && npm test` -> 4 passed
+- Backend: `uv run pytest -q` -> 54 passed
+- Frontend: `cd web && npm test` -> 13 passed
 - Typecheck: `cd web && npm run typecheck`
 - Build: `cd web && npm run build`
 
 The SSE test uses a finite stream because httpx's ASGITransport buffers the entire response. Live delivery was manually verified in the running app.
+
+Task 18 was also smoke-tested in Chrome: login, upload `demo_interview.wav`, see the
+20s duration and 1-minute estimate, create the job, and watch it complete with 15
+artifacts. Unsupported file types and the transcription/rough-cut dependency were
+verified in the browser as well.
 
 ## Important files
 
@@ -258,6 +264,7 @@ The SSE test uses a finite stream because httpx's ASGITransport buffers the enti
 - `6c92f9c`: project README
 - `1c4eb6a`: Runpod architecture
 - `0734d68`: Runpod docs verification
+- `259eb66`: Task 18 new job flow
 
 The progress file itself adds one more documentation commit after these.
 
@@ -274,20 +281,14 @@ The progress file itself adds one more documentation commit after these.
    `parecut-separate`.
 3. Add R2 bucket CORS for browser uploads, then switch the app to
    `PARECUT_STORAGE_BACKEND=r2` and `PARECUT_PIPELINE_RUNNER=runpod`.
-4. Task 18: build `/new`.
-   - Drag and drop audio or video
-   - Presigned upload with progress
-   - Pipeline toggles and enhance mix
-   - FPS select and credit estimate
-   - Inline 402 shortfall handling
-5. Task 19: build `/jobs/:id`.
+4. Task 19: build `/jobs/:id`.
    - SSE stage timeline
    - Speaker role editor with PATCH regeneration
    - Tabs for audio, before transcript, after transcript, and `ROUGH-CUT.md`
    - Download buttons and copy-for-agent
-6. Task 20: serve the built SPA from FastAPI, finish README and manual smoke test.
-7. Implement the real rough-cut engine (timecodes, rules, LLM take selection).
-8. Add Redis, Stripe, OAuth, and retention.
+5. Task 20: serve the built SPA from FastAPI, finish README and manual smoke test.
+6. Implement the real rough-cut engine (timecodes, rules, LLM take selection).
+7. Add Redis, Stripe, OAuth, and retention.
 
 ## Non-negotiables
 
