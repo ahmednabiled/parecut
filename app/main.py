@@ -1,6 +1,8 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -80,6 +82,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(profile.router)
     app.include_router(uploads.router)
     app.include_router(jobs.router)
+
+    dist = settings.frontend_dist
+    assets = dist / "assets"
+    if assets.is_dir():
+        app.mount("/assets", StaticFiles(directory=assets), name="assets")
+
+    @app.get("/{path:path}", include_in_schema=False)
+    async def spa_fallback(path: str):
+        if path == "api" or path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not found")
+
+        root = dist.resolve()
+        if path:
+            candidate = (root / path).resolve()
+            try:
+                candidate.relative_to(root)
+            except ValueError:
+                candidate = None
+            if candidate is not None and candidate.is_file():
+                return FileResponse(candidate)
+
+        index = dist / "index.html"
+        if index.is_file():
+            return FileResponse(index)
+        return PlainTextResponse(
+            "Frontend build not found. Run `npm run build` in web/.",
+            status_code=404,
+        )
 
     return app
 

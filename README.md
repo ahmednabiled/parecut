@@ -19,38 +19,48 @@ It takes a difficult recording (single microphone, room noise, an off-camera lin
 
 ## Current status
 
-Phase 1: the web shell works end to end.
+Phase 1 works end to end: the web shell, R2 storage, and the real Runpod model
+pipeline.
 
 Implemented:
 
 - email and password auth with Argon2 and an httpOnly JWT cookie
 - profile, credit balance, and preferences
-- signed local uploads and downloads
+- signed uploads and downloads
 - job creation with credit reservation and refunds
 - live job progress over SSE
-- a mock pipeline that produces demo stems and transcripts
+- real noise reduction with DeepFilterNet3
+- real music/dialogue separation with Demucs `htdemucs_ft`
+- real transcription with WhisperX 3.3.1 `large-v3-turbo` and English word alignment
+- real diarization with pyannote `speaker-diarization-3.1`, `segmentation-3.0`, and
+  `wespeaker-voxceleb-resnet34-LM`
+- per-speaker gated stems
+- a speaker-attributed canonical transcript that drives the before/after transcripts
+  and `ROUGH-CUT.md`
 - speaker-role switching that regenerates the after-cut transcript and `ROUGH-CUT.md`
+- deterministic false-start and same-speaker-retake removal
 - a seeded demo account and a monochrome Material 3 interface
+- FastAPI serving the built SPA with deep-link fallback in production
 
-Optional infrastructure in place:
+Still pending:
 
-- Cloudflare R2 storage behind `ObjectStorage` (`PARECUT_STORAGE_BACKEND=r2`)
-- Runpod Serverless runner behind `PipelineRunner` (`PARECUT_PIPELINE_RUNNER=runpod`)
-- A remote worker contract in `runpod_app/`, built by GitHub Actions and pushed privately to GHCR
-- A `ghcr-parecut` Runpod registry credential using a GitHub token scoped to `read:packages`
+- Resemble Enhance; `enhanced_audio` currently reuses the denoised audio and is labeled
+  `Denoised Audio (Enhancement pending)`
+- true target-speaker separation; per-speaker stems are gated from diarization turns
+- LLM take selection
+- CUDA inference; the current worker runs CPU torch
+- Redis, Stripe billing, OAuth, and retention
 
-Still not real:
-
-- the audio models in the worker (the current worker is a contract stub)
-- Redis, LLM take selection, Stripe billing, and OAuth
-
-The default mock pipeline copies the uploaded audio and generates demo transcript artifacts. It exercises the product flow. It does not perform real audio analysis.
+The checked-in `.env.example` keeps the no-credentials local/mock path. The active
+development `.env` uses R2 + Runpod. The mock runner still exists for tests and for a
+plain checkout.
 
 ## Stack
 
 - Backend: FastAPI, SQLModel and SQLAlchemy, Alembic, SQLite by default (Postgres-ready), Argon2, PyJWT, SSE
 - Frontend: React, Vite, TypeScript, Tailwind CSS, TanStack Query
-- GPU: Runpod Serverless with DeepFilterNet3, Nemotron-3-Diarization, WhisperX large-v3-turbo, and Demucs
+- Worker: Python 3.11, DeepFilterNet3, Demucs, WhisperX, pyannote, CPU torch 2.2.2
+- GPU: Runpod Serverless queue endpoint `parecut-audio`
 - Storage: Cloudflare R2 for remote workers, local signed storage for development
 
 ## Run locally
@@ -86,6 +96,22 @@ Demo login:
 
 Local data is written to `var/parecut.db` and `var/storage/`.
 
+## Production-style run
+
+Build the SPA, then let FastAPI serve it and the API on one port:
+
+```bash
+cd web && npm run build && cd ..
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+Open http://localhost:8000. Deep links such as `/jobs/<id>` return the SPA, while
+unknown `/api/...` routes return JSON 404s. Brand assets are served from the built
+`web/dist` directory.
+
+For the real pipeline, set `PARECUT_STORAGE_BACKEND=r2`,
+`PARECUT_PIPELINE_RUNNER=runpod`, and the R2/Runpod credentials in `.env`.
+
 ## Tests
 
 ```bash
@@ -98,6 +124,7 @@ cd web && npm test && npm run typecheck && npm run build
 ```text
 app/                FastAPI application
 parecut_engine/     shared pipeline, transcript, and event schemas
+runpod_app/         Runpod worker and Dockerfile
 web/                React SPA
 alembic/            database migrations
 tests/              backend tests
@@ -108,12 +135,11 @@ PARECUT-SRS-v2.0.md product requirements
 
 ## Roadmap
 
-1. Real rough-cut engine: timecodes, rule pass, before and after transcripts, `ROUGH-CUT.md`
-2. Local audio ingest and DSP
-3. Runpod GPU stages: enhancement, separation, transcription
-4. R2 storage and signed uploads
-5. LLM take selection
-6. Billing, OAuth, and retention
+1. Resemble Enhance and true target-speaker separation
+2. LLM take selection on top of the deterministic cut rules
+3. CUDA inference for faster long-form processing
+4. Redis, billing, OAuth, and retention
+5. A dedicated `parecut-separate` endpoint for heavy separation stages
 
 ## License
 
