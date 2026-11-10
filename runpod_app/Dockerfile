@@ -39,13 +39,18 @@ RUN pip install --no-cache-dir --no-deps "deepfilternet==0.5.6"
 RUN python -c "from df.enhance import init_df; init_df(log_file=None)"
 
 RUN python - <<'PY'
-import whisperx
+from huggingface_hub import snapshot_download
 
-whisperx.load_model(
-    "large-v3-turbo",
-    device="cpu",
-    compute_type="int8",
-    download_root="/root/.cache/whisperx",
+snapshot_download(
+    "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+    allow_patterns=[
+        "config.json",
+        "preprocessor_config.json",
+        "model.bin",
+        "tokenizer.json",
+        "vocabulary.*",
+    ],
+    cache_dir="/root/.cache/whisperx",
 )
 PY
 
