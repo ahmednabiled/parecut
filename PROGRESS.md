@@ -53,14 +53,18 @@ Complete:
 - Monochrome Material 3 visual system with Google Sans and the Pare Cut script logo
 - Backend tests, frontend tests, typecheck, and production build
 - Cloudflare R2 storage adapter behind `ObjectStorage`, verified with real put/get/delete
-- Runpod queue endpoint `parecut-audio` with a real DeepFilterNet3 denoising worker
+- Runpod queue endpoint `parecut-audio` with a full model worker
 - `RunpodPipelineRunner`, `HttpRunpodClient`, and `jobs.runpod_job_id`
-- End-to-end R2 + Runpod job: 15 artifacts, downloads, and `ROUGH-CUT.md`
-- Local `.env` switched to `r2` + `runpod`; a UI-created job was submitted to
-  Runpod, recorded its `runpod_job_id`, and completed with 15 R2 artifacts
-- Real noise reduction: `cleaned_audio` is DeepFilterNet3 output (48 kHz mono), not a
-  copy; `enhanced_audio` is the same denoised audio until enhancement is implemented
-- Worker image pinned on endpoint release #6 to `sha-37696ea`
+- End-to-end R2 + Runpod job: artifacts, downloads, and `ROUGH-CUT.md`
+- Local `.env` switched to `r2` + `runpod`; UI-created jobs have real `runpod_job_id`s
+- Real noise reduction: `cleaned_audio` is DeepFilterNet3 output (48 kHz mono)
+- Real separation: `stem_music` and `stem_dialogue` come from Demucs `htdemucs_ft`;
+  per-speaker stems are gated from the diarization turns
+- Real transcription: WhisperX `large-v3-turbo` with word alignment
+- Real diarization: pyannote `speaker-diarization-3.1` with
+  `segmentation-3.0` and `wespeaker-voxceleb-resnet34-LM`, baked into the image
+- Speaker-attributed transcript fed into the before/after renderers and `ROUGH-CUT.md`
+- Endpoint release #13 pinned to `ghcr.io/ahmednabiled/parecut-worker:sha-c12bc4e`
 - R2 browser uploads proxied through FastAPI, with worker artifact uploads still using
   direct presigned R2 URLs; text artifacts served same-origin for previews and copy
 - Deterministic cut rules for restart false starts and same-speaker retakes; the
@@ -70,8 +74,10 @@ Complete:
 Pending:
 
 - Task 20: FastAPI serving the built SPA, README polish, final verification
-- Real enhancement, separation, diarization, and transcription in the worker
-  (DeepFilterNet3 noise reduction is live; stems and transcripts are still stubs)
+- Resemble Enhance for the enhancement stage; `enhanced_audio` currently reuses the
+  DeepFilterNet3 output and is labeled `Denoised Audio (Enhancement pending)`
+- True target-speaker separation; per-speaker stems are currently gated by diarization
+  turns, and MossFormer2-SS remains optional
 - LLM take selection on top of the deterministic false-start/retake rules
 - `parecut-separate` endpoint
 - Optional R2 bucket CORS if direct browser uploads replace the FastAPI proxy
@@ -120,7 +126,7 @@ Job progress is stored in `jobs.stage_states`, so reloads and SSE reconnects reb
   `signed_direct_upload_url` (worker outputs) methods.
 - The repository is public and Apache-2.0 licensed.
 
-## Runpod integration (backend and DeepFilterNet3 worker in place)
+## Runpod integration (backend and full model worker in place)
 
 Implemented:
 
@@ -129,7 +135,9 @@ Implemented:
 - `R2ObjectStorage` behind `ObjectStorage`
 - `RunpodPipelineRunner` and `HttpRunpodClient` behind `PipelineRunner`
 - `jobs.runpod_job_id` added by migration `f34d11320711`
-- `runpod_app/worker.py` with DeepFilterNet3 denoising and `runpod_app/Dockerfile`
+- `runpod_app/worker.py` with DeepFilterNet3 denoising, WhisperX transcription and
+  alignment, pyannote diarization, Demucs separation, and gated speaker stems
+- `runpod_app/Dockerfile` with the full worker image
 - `parecut-audio` endpoint `yf16hg8td6au29`, queue-based, 24 GB AMPERE_24 (L4/A5000/3090),
   0-2 workers, 10s idle timeout, 4h execution timeout, FlashBoot on
 - End-to-end test: the runner submitted a job, the worker uploaded 15 artifacts to R2,
@@ -138,7 +146,9 @@ Implemented:
   submitted to `parecut-audio` (`runpod_job_id` recorded), the worker ran and the job
   completed in about 27 seconds with 15 artifacts
 - After release #6, a noisy speech job completed with `Denoised Audio (DeepFilterNet3)`
-  and `Denoised Audio (Enhancement pending)`; the other artifacts remained stubs
+- After release #13, a two-voice sample produced two speakers, four aligned transcript
+  segments, Demucs music/dialogue stems, two gated speaker stems, and real before/after
+  transcripts and `ROUGH-CUT.md`
 
 Worker image:
 
@@ -148,24 +158,45 @@ Worker image:
   `ghcr.io/ahmednabiled/parecut-worker:sha-<short>`.
 - The repository is private, so Runpod uses the `ghcr-parecut` registry credential with a
   GitHub PAT scoped to `read:packages`.
-- Endpoint release #6 runs `ghcr.io/ahmednabiled/parecut-worker:sha-37696ea`.
+- Endpoint release #13 runs `ghcr.io/ahmednabiled/parecut-worker:sha-c12bc4e`.
 - The private pull was verified end to end: a fresh worker pulled the private image,
-  processed a job, and uploaded 15 artifacts to R2.
+  processed jobs, and uploaded artifacts to R2.
+- The image bakes DeepFilterNet3, WhisperX `large-v3-turbo`, the English alignment
+  model, Demucs `htdemucs_ft`, and the pyannote diarization models.
+- The gated pyannote terms were accepted on the `ahmednabiled` Hugging Face account.
+  The build uses the `HF_TOKEN` GitHub Actions secret through a BuildKit secret; the
+  token is not persisted in the image.
 - Use a new `sha-<short>` release for each worker change. The `dev` tag is mutable, so
   the endpoint is pinned to an immutable tag.
 
 Current worker:
 
-- Noise reduction is real: the worker converts the source to 48 kHz mono with `ffmpeg`,
-  runs DeepFilterNet3, and uploads the denoised WAV as `cleaned_audio`.
-- `enhanced_audio` currently reuses the denoised WAV and is labeled
-  `Denoised Audio (Enhancement pending)` until Resemble Enhance is added.
-- Music/speaker stems, transcripts, and `ROUGH-CUT.md` are still stub/demo content.
-- The worker image uses Python 3.11 because `deepfilterlib` has no Python 3.12 wheel.
+- Noise reduction: `ffmpeg` converts the source to 48 kHz mono, DeepFilterNet3 denoises
+  it, and the result is uploaded as `cleaned_audio`.
+- Separation: Demucs `htdemucs_ft` produces `stem_music` and `stem_dialogue`.
+  Per-speaker stems are gated from the pyannote turns, up to eight speakers.
+- Transcription: WhisperX 3.3.1 `large-v3-turbo` with the English alignment model.
+  Aligned words are assigned to speakers and merged into readable segments.
+- Diarization: pyannote `speaker-diarization-3.1` with `segmentation-3.0` and
+  `wespeaker-voxceleb-resnet34-LM`. If the model fails, the worker logs the error and
+  falls back to one speaker instead of failing the whole job.
+- Cut outputs: the real speaker-attributed transcript is the canonical
+  `transcript_before.json`; `build_cut_plan`, the before/after renderers, and
+  `ROUGH-CUT.md` use it. `PATCH /speakers` regenerates from the real transcript.
+- Enhancement: `enhanced_audio` reuses the denoised WAV and is labeled
+  `Denoised Audio (Enhancement pending)`. Resemble Enhance is not installed.
+- The image uses Python 3.11 because `deepfilterlib` has no Python 3.12 wheel.
   It installs `ffmpeg`, `git`, `libsndfile1`, CPU torch/torchaudio 2.2.2, `soundfile`,
-  and DeepFilterNet 0.5.6. DeepFilterNet is installed with `--no-deps` because its
-  `packaging<24` pin conflicts with `runpod`'s `packaging>=26.3`.
-- DeepFilterNet3 weights are baked into the image at build time.
+  `whisperx==3.3.1`, `pyannote.audio==3.3.2`, `demucs==4.1.0`, and
+  `transformers==4.48.3`.
+- CTranslate2 is overridden to 4.6.0 after the WhisperX install: 4.4/4.5 fail on newer
+  glibc with "cannot enable executable stack", while 4.6 works with faster-whisper 1.1.0.
+- DeepFilterNet is installed with `--no-deps` because its `packaging<24` pin conflicts
+  with `runpod`'s `packaging>=26.3`.
+- All model weights are baked into the image. Runtime uses `HF_HUB_OFFLINE=1` and
+  `TRANSFORMERS_OFFLINE=1`.
+- Inference is CPU-only in the current worker. Short clips take roughly 1-2 minutes;
+  long recordings will be slower until the image is moved to CUDA torch.
 - Worker progress updates still cause problems in Runpod. They are disabled by default;
   set `PARECUT_WORKER_PROGRESS=1` only after implementing them with a timeout or a safer
   progress mechanism.
@@ -182,14 +213,16 @@ Architecture:
 - Workers use `runpod.serverless.start`, receive presigned R2 URLs, and never touch Postgres or R2 credentials
 - `RunpodPipelineRunner` implements the existing `PipelineRunner` protocol
 
-Model stack:
+Model stack currently deployed:
 
 - Noise reduction: DeepFilterNet3
-- Diarization: NVIDIA Nemotron-3-Diarization (100M, up to 8 speakers, OpenMDW 1.1)
-- Transcription: WhisperX large-v3-turbo
-- Music separation: Demucs
-- Speech separation, optional: MossFormer2-SS
-- Enhancement, optional: Resemble Enhance
+- Diarization: pyannote `speaker-diarization-3.1` with `segmentation-3.0` and
+  `wespeaker-voxceleb-resnet34-LM`
+- Transcription: WhisperX 3.3.1 `large-v3-turbo` with English word alignment
+- Music separation: Demucs `htdemucs_ft`
+- Speaker stems: diarization-gated audio (not true target-speaker extraction)
+- Enhancement: DeepFilterNet3 output as a placeholder; Resemble Enhance pending
+- Optional future: MossFormer2-SS and Resemble Enhance
 
 Important current facts from official docs (verified 2026-11-08):
 
@@ -262,7 +295,7 @@ Default local data:
 
 ## Verification
 
-- Backend: `uv run pytest -q` -> 60 passed
+- Backend: `uv run pytest -q` -> 61 passed
 - Frontend: `cd web && npm test` -> 19 passed
 - Typecheck: `cd web && npm run typecheck`
 - Build: `cd web && npm run build` (one chunk-size warning from react-markdown)
@@ -297,6 +330,20 @@ The deterministic cut rules were verified by regenerating that Runpod job's outp
 through `PATCH /speakers` with both speakers still presenters. The before-cut SRT kept
 "Today we're gonna— sorry, let me go again."; the after-cut SRT dropped it; and
 `ROUGH-CUT.md` listed it as a `FALSE_START` in the remove table and audit log.
+
+The full model stack was verified on release #13 with a two-voice test clip:
+
+- pyannote found `SPEAKER_00` and `SPEAKER_01`.
+- WhisperX produced four aligned, speaker-attributed segments.
+- Demucs produced real music and dialogue stems.
+- The worker produced two gated speaker stems.
+- The before transcript contained all four segments; `PATCH /speakers` with
+  `SPEAKER_01=feeder` removed its two lines from the after transcript and changed the
+  `ROUGH-CUT.md` speaker map to `REMOVE ALL`.
+
+A 33s WhatsApp OGG voice note also completed with real transcription, denoising, and
+Demucs stems. It ran on the pre-#13 worker and used the one-speaker fallback; jobs on
+release #13 use the aligned, diarized path.
 
 ## Important files
 
@@ -334,26 +381,26 @@ through `PATCH /speakers` with both speakers still presenters. The before-cut SR
 - `a732a2e`: DeepFilterNet3 worker denoising
 - `0d037d0`: install git for DeepFilterNet logging
 - `37696ea`: install soundfile backend for torchaudio
+- `63eddcb`: full-stack worker models
+- `3cc10b3`: CTranslate2 4.6 for newer glibc
+- `4a5daf2`: bake all pyannote diarization models
+- `c12bc4e`: word alignment and speaker-split transcript
 
 The progress file itself adds one more documentation commit after these.
 
 ## Next actions in order
 
-1. Add the remaining real models to the worker.
-   - WhisperX large-v3-turbo for transcription and word timing
-   - Nemotron-3-Diarization for speaker attribution
-   - Demucs for music separation
-   - Resemble Enhance for the enhancement stage
-   - MossFormer2-SS as an optional stage
-   - Generate real before/after transcripts and `ROUGH-CUT.md`
-   - DeepFilterNet3 noise reduction is already live
-2. Add LLM take selection on top of the deterministic rule pass. The current rules
+1. Add Resemble Enhance for the enhancement stage. `enhanced_audio` currently reuses
+   the DeepFilterNet3 output and is labeled `Denoised Audio (Enhancement pending)`.
+2. Replace the gated per-speaker stems with true target-speaker extraction
+   (MossFormer2-SS) if the product needs overlapping-speech separation.
+3. Add LLM take selection on top of the deterministic rule pass. The current rules
    remove silence, feeder lines, restart false starts, and same-speaker retakes.
-   Rebuild the worker image after cut-rule changes so Runpod uses the same rules.
-3. Task 20: serve the built SPA from FastAPI, finish README and manual smoke test.
-4. Create `parecut-separate`; publish a new `sha-<short>` worker release for each change.
-5. Optional: add R2 CORS if direct browser uploads should replace the FastAPI proxy.
-6. Add Redis, Stripe, OAuth, and retention.
+4. Task 20: serve the built SPA from FastAPI, finish README and manual smoke test.
+5. Create `parecut-separate`; publish a new `sha-<short>` worker release for each change.
+6. Optional: add R2 CORS if direct browser uploads should replace the FastAPI proxy.
+7. Consider CUDA torch for faster inference; the current worker is CPU-only.
+8. Add Redis, Stripe, OAuth, and retention.
 
 ## Non-negotiables
 
