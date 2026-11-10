@@ -13,6 +13,8 @@ RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu 
     "torch==2.2.2+cpu" "torchaudio==2.2.2+cpu"
 
 RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu \
+    "torch==2.2.2+cpu" \
+    "torchaudio==2.2.2+cpu" \
     "runpod==2.1.0" \
     "httpx==0.28.1" \
     "pydantic>=2" \
