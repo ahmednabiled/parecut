@@ -163,6 +163,7 @@ def test_worker_runs_real_pipeline_stages():
     }
     assert result["diarization"] == {
         "fallback": False,
+        "error": None,
         "turns": 2,
         "speakers": ["SPEAKER_00", "SPEAKER_01"],
     }
@@ -220,6 +221,7 @@ def test_worker_falls_back_to_one_speaker_when_diarization_fails():
 
     assert result["speaker_roles"] == {"SPEAKER_01": "presenter"}
     assert result["diarization"]["fallback"] is True
+    assert result["diarization"]["error"] == "RuntimeError: diarization unavailable"
     speaker_artifacts = [
         artifact for artifact in result["artifacts"] if artifact["kind"] == "stem_speaker"
     ]

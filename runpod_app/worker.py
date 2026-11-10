@@ -425,12 +425,14 @@ def handler(
 
         turns: list[SpeakerTurn] = []
         diarization_fallback = False
+        diarization_error: str | None = None
         if config.transcribe or config.separate_speakers:
             try:
                 turns = diarize_audio(working_wav, diarizer=diarizer)
-            except Exception:
+            except Exception as exc:
                 logger.exception("diarization failed; using one speaker")
                 diarization_fallback = True
+                diarization_error = f"{type(exc).__name__}: {exc}"
             if not turns:
                 diarization_fallback = True
                 turns = [SpeakerTurn("SPEAKER_01", 0.0, duration)]
@@ -515,6 +517,7 @@ def handler(
         "speaker_roles": roles,
         "diarization": {
             "fallback": diarization_fallback,
+            "error": diarization_error,
             "turns": len(turns),
             "speakers": sorted({turn.speaker for turn in turns}),
         },
