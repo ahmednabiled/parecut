@@ -1,5 +1,8 @@
 import asyncio
 
+from sqlmodel import select
+
+from app.models import JobArtifact
 from tests.helpers import make_wav, register, upload
 
 
@@ -44,6 +47,53 @@ async def test_marking_feeder_removes_lines_from_after_cut(app, client):
     assert "FEEDER_PROMPT" in (
         await client.get(md["download_url"], follow_redirects=True)
     ).text
+
+
+async def test_demo_job_keeps_demo_labels_after_regeneration(app, client):
+    job = await _completed_job(app, client)
+
+    response = await client.patch(
+        f"/api/jobs/{job['id']}/speakers",
+        json={"roles": {"SPEAKER_01": "presenter", "SPEAKER_02": "feeder"}},
+    )
+    assert response.status_code == 200
+    labels = [
+        artifact["label"]
+        for artifact in response.json()["artifacts"]
+        if artifact["kind"] in {"transcript_after", "rough_cut_md"}
+    ]
+    assert labels
+    assert all(label.startswith("Demo — ") for label in labels)
+
+
+async def test_non_demo_job_regenerates_with_real_labels(app, client):
+    job = await _completed_job(app, client)
+    async with app.state.sessionmaker() as session:
+        canonical = (
+            await session.exec(
+                select(JobArtifact).where(
+                    JobArtifact.job_id == job["id"],
+                    JobArtifact.kind == "transcript_before",
+                    JobArtifact.format == "json",
+                )
+            )
+        ).one()
+        canonical.label = "Transcript (Before Cut)"
+        session.add(canonical)
+        await session.commit()
+
+    response = await client.patch(
+        f"/api/jobs/{job['id']}/speakers",
+        json={"roles": {"SPEAKER_01": "presenter", "SPEAKER_02": "feeder"}},
+    )
+    assert response.status_code == 200
+    labels = [
+        artifact["label"]
+        for artifact in response.json()["artifacts"]
+        if artifact["kind"] in {"transcript_after", "rough_cut_md"}
+    ]
+    assert labels
+    assert not any(label.startswith("Demo — ") for label in labels)
 
 
 async def test_unknown_speaker_keys_are_rejected(app, client):

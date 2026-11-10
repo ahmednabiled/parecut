@@ -128,6 +128,7 @@ async def seed_demo(
             transcript,
             job.speaker_roles,
             settings,
+            demo=True,
         )
         await session.commit()
 

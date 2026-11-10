@@ -254,6 +254,7 @@ class MockPipelineRunner:
                             transcript,
                             roles,
                             self._settings,
+                            demo=True,
                         )
                     session.add(job)
                     await session.commit()

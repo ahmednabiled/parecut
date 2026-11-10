@@ -103,8 +103,14 @@ async def write_cut_outputs(
     transcript: Transcript,
     roles: dict[str, SpeakerRole],
     settings: Settings,
+    *,
+    demo: bool = False,
 ) -> None:
     root = f"jobs/{job.id}"
+    after_label = (
+        "Demo — Transcript (After Cut)" if demo else "Transcript (After Cut)"
+    )
+    rough_label = "Demo — ROUGH-CUT.md" if demo else "ROUGH-CUT.md"
     plan = build_cut_plan(transcript, roles)
     kept_duration = sum(
         range_.end - range_.start for range_ in plan if range_.action == "keep"
@@ -132,7 +138,7 @@ async def write_cut_outputs(
             storage,
             job,
             kind="transcript_after",
-            label="Demo — Transcript (After Cut)",
+            label=after_label,
             fmt=fmt,
             key=f"{root}/transcript_after.{fmt}",
             content=content,
@@ -143,7 +149,7 @@ async def write_cut_outputs(
         storage,
         job,
         kind="rough_cut_md",
-        label="Demo — ROUGH-CUT.md",
+        label=rough_label,
         fmt="md",
         key=f"{root}/ROUGH-CUT.md",
         content=render_rough_cut_md(meta, plan, roles),
@@ -171,6 +177,9 @@ async def regenerate_cut_outputs(
 
     raw = await storage.get(canonical.r2_key)
     transcript = Transcript.model_validate_json(raw)
+    demo = canonical.label.startswith("Demo — ")
 
     await _delete_kinds(session, storage, job.id, {"transcript_after", "rough_cut_md"})
-    await write_cut_outputs(session, storage, job, transcript, roles, settings)
+    await write_cut_outputs(
+        session, storage, job, transcript, roles, settings, demo=demo
+    )
