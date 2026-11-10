@@ -1,13 +1,13 @@
+import io
 import wave
 from pathlib import Path
 
 from app.services.runpod import expected_artifacts
-from parecut_engine.schemas import PipelineConfig
-from runpod_app.worker import handler
+from parecut_engine.schemas import PipelineConfig, Transcript, TranscriptSegment
+from runpod_app.worker import SpeakerTurn, handler
 from tests.helpers import make_wav
 
-SOURCE = make_wav(0.5)
-DENOISED = b"denoised-audio-bytes"
+SOURCE = make_wav(2.0)
 
 
 class FakeResponse:
@@ -37,7 +37,38 @@ def fake_denoiser(input_path: Path, output_path: Path) -> None:
     with wave.open(str(input_path)) as reader:
         assert reader.getframerate() == 48000
         assert reader.getnchannels() == 1
-    output_path.write_bytes(DENOISED)
+    output_path.write_bytes(input_path.read_bytes())
+
+
+def fake_transcriber(wav_path: Path) -> Transcript:
+    return Transcript(
+        speakers=["SPEAKER_01"],
+        segments=[
+            TranscriptSegment(
+                speaker="SPEAKER_01",
+                start=0.2,
+                end=0.8,
+                text="Hello from the presenter.",
+            ),
+            TranscriptSegment(
+                speaker="SPEAKER_01",
+                start=1.0,
+                end=1.6,
+                text="And this is the second line.",
+            ),
+        ],
+    )
+
+
+def fake_diarizer(wav_path: Path) -> list[SpeakerTurn]:
+    return [
+        SpeakerTurn("SPEAKER_00", 0.0, 1.0),
+        SpeakerTurn("SPEAKER_01", 1.0, 2.0),
+    ]
+
+
+def fake_separator(wav_path: Path, workdir: Path) -> tuple[bytes, bytes]:
+    return b"music-stem", b"dialogue-stem"
 
 
 def make_job(config: PipelineConfig | None = None) -> dict:
@@ -48,7 +79,7 @@ def make_job(config: PipelineConfig | None = None) -> dict:
             "job_id": "job-1",
             "source_url": "https://source.example/clip.wav",
             "source_filename": "clip.wav",
-            "duration_seconds": 24.72,
+            "duration_seconds": 2.0,
             "sample_rate": 48000,
             "fps": "25",
             "pipeline": config.model_dump(),
@@ -67,37 +98,73 @@ def _uploaded(client: FakeClient, job: dict) -> dict[str, bytes]:
     return {key_by_url[url]: content for url, content, _ in client.puts}
 
 
-def test_worker_denoises_cleaned_and_enhanced_artifacts():
+def _frames(data: bytes) -> int:
+    with wave.open(io.BytesIO(data)) as reader:
+        return reader.getnframes()
+
+
+def test_worker_runs_real_pipeline_stages():
     job = make_job()
     client = FakeClient()
 
-    result = handler(job, client=client, denoiser=fake_denoiser)
+    result = handler(
+        job,
+        client=client,
+        denoiser=fake_denoiser,
+        transcriber=fake_transcriber,
+        diarizer=fake_diarizer,
+        separator=fake_separator,
+    )
 
-    expected = job["input"]["expected_artifacts"]
-    assert {artifact["key"] for artifact in result["artifacts"]} == {
-        artifact["key"] for artifact in expected
-    }
     uploaded = _uploaded(client, job)
+    expected = job["input"]["expected_artifacts"]
     cleaned = next(a["key"] for a in expected if a["kind"] == "cleaned_audio")
     enhanced = next(a["key"] for a in expected if a["kind"] == "enhanced_audio")
-    stem = next(a["key"] for a in expected if a["kind"] == "stem_music")
+    music = next(a["key"] for a in expected if a["kind"] == "stem_music")
+    dialogue = next(a["key"] for a in expected if a["kind"] == "stem_dialogue")
+    speaker_keys = [a["key"] for a in expected if a["kind"] == "stem_speaker"]
 
-    assert uploaded[cleaned] == DENOISED
-    assert uploaded[enhanced] == DENOISED
-    assert uploaded[stem] == SOURCE
+    assert uploaded[cleaned].startswith(b"RIFF")
+    assert uploaded[enhanced] == uploaded[cleaned]
+    assert uploaded[music] == b"music-stem"
+    assert uploaded[dialogue] == b"dialogue-stem"
+    assert _frames(uploaded[speaker_keys[0]]) == _frames(uploaded[cleaned])
+    assert _frames(uploaded[speaker_keys[1]]) == _frames(uploaded[cleaned])
+    assert speaker_keys[2] not in uploaded
+
+    before_json = uploaded[
+        next(
+            a["key"]
+            for a in expected
+            if a["kind"] == "transcript_before" and a["format"] == "json"
+        )
+    ].decode()
+    assert "Hello from the presenter." in before_json
+    assert "SPEAKER_00" in before_json
+    assert "SPEAKER_01" in before_json
+
+    rough = uploaded[next(a["key"] for a in expected if a["kind"] == "rough_cut_md")]
+    assert b"PARECUT ROUGH-CUT SPECIFICATION" in rough
+    assert b"SPEAKER_00" in rough
 
     labels = {artifact["kind"]: artifact["label"] for artifact in result["artifacts"]}
+    speaker_labels = [
+        artifact["label"]
+        for artifact in result["artifacts"]
+        if artifact["kind"] == "stem_speaker"
+    ]
     assert labels["cleaned_audio"] == "Denoised Audio (DeepFilterNet3)"
-    assert labels["enhanced_audio"] == "Denoised Audio (Enhancement pending)"
-    assert labels["stem_music"].startswith("Stub — ")
-    assert result["stages"]["noise_reduction"]["status"] == "completed"
+    assert labels["stem_music"] == "Music Stem (Demucs)"
+    assert speaker_labels == ["Speaker 01 (gated)", "Speaker 02 (gated)"]
+    assert labels["transcript_before"] == "Transcript (Before Cut)"
     assert result["speaker_roles"] == {
+        "SPEAKER_00": "presenter",
         "SPEAKER_01": "presenter",
-        "SPEAKER_02": "presenter",
     }
+    assert result["stages"]["noise_reduction"]["status"] == "completed"
 
 
-def test_worker_skips_denoise_when_audio_stages_are_disabled():
+def test_worker_skips_disabled_models():
     config = PipelineConfig(
         noise_reduction=False,
         enhance=False,
@@ -112,9 +179,42 @@ def test_worker_skips_denoise_when_audio_stages_are_disabled():
     def fail_denoiser(input_path: Path, output_path: Path) -> None:
         raise AssertionError("denoiser should not run")
 
-    result = handler(job, client=client, denoiser=fail_denoiser)
+    def fail_separator(wav_path: Path, workdir: Path) -> tuple[bytes, bytes]:
+        raise AssertionError("separator should not run")
+
+    result = handler(
+        job,
+        client=client,
+        denoiser=fail_denoiser,
+        transcriber=fake_transcriber,
+        diarizer=fake_diarizer,
+        separator=fail_separator,
+    )
 
     kinds = [artifact["kind"] for artifact in result["artifacts"]]
     assert kinds == ["transcript_before"] * 4
     assert "noise_reduction" not in result["stages"]
     assert "transcribe" in result["stages"]
+
+
+def test_worker_falls_back_to_one_speaker_when_diarization_fails():
+    job = make_job()
+    client = FakeClient()
+
+    def broken_diarizer(wav_path: Path) -> list[SpeakerTurn]:
+        raise RuntimeError("diarization unavailable")
+
+    result = handler(
+        job,
+        client=client,
+        denoiser=fake_denoiser,
+        transcriber=fake_transcriber,
+        diarizer=broken_diarizer,
+        separator=fake_separator,
+    )
+
+    assert result["speaker_roles"] == {"SPEAKER_01": "presenter"}
+    speaker_artifacts = [
+        artifact for artifact in result["artifacts"] if artifact["kind"] == "stem_speaker"
+    ]
+    assert len(speaker_artifacts) == 1
