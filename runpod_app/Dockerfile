@@ -62,26 +62,23 @@ PY
 
 RUN --mount=type=secret,id=HF_TOKEN HF_TOKEN=$(cat /run/secrets/HF_TOKEN) python - <<'PY'
 import os
-import wave
 
+from huggingface_hub import snapshot_download
 from pyannote.audio import Pipeline
 
-# The pipeline loads its segmentation/embedding sub-models lazily. Run one
-# tiny inference so every required file is present in the image cache.
-with wave.open("/tmp/diarization_smoke.wav", "wb") as writer:
-    writer.setnchannels(1)
-    writer.setsampwidth(2)
-    writer.setframerate(16000)
-    writer.writeframes(b"\x00\x00" * 16000)
-
-pipeline = Pipeline.from_pretrained(
+token = os.environ["HF_TOKEN"]
+for repo in (
     "pyannote/speaker-diarization-3.1",
-    use_auth_token=os.environ["HF_TOKEN"],
+    "pyannote/segmentation-3.0",
+    "pyannote/wespeaker-voxceleb-resnet34-LM",
+):
+    print("downloading", repo)
+    snapshot_download(repo, use_auth_token=token)
+
+Pipeline.from_pretrained(
+    "pyannote/speaker-diarization-3.1",
+    use_auth_token=token,
 )
-try:
-    pipeline("/tmp/diarization_smoke.wav")
-except Exception as exc:
-    print("diarization smoke inference skipped:", exc)
 PY
 
 # WhisperX 3.3.1 pins ctranslate2<4.5, but 4.4/4.5 fail on newer glibc with

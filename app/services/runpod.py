@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import time
 from decimal import Decimal
 from typing import Any, Protocol
@@ -19,6 +20,8 @@ from app.storage import ObjectStorage
 from parecut_engine.schemas import JobEvent, PipelineConfig
 
 TERMINAL_STATUSES = {"COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT"}
+
+logger = logging.getLogger(__name__)
 
 
 class RunpodError(Exception):
@@ -350,6 +353,10 @@ class RunpodPipelineRunner:
             job = await session.get(Job, job_id)
             if job is None or job.status in {"completed", "failed"}:
                 return
+
+            diarization = output.get("diarization") if isinstance(output, dict) else None
+            if diarization is not None:
+                logger.info("worker diarization: %s", diarization)
 
             states = dict(job.stage_states or {})
             now = utcnow().isoformat()
