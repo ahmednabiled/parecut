@@ -63,10 +63,9 @@ Complete:
 - Real separation: `stem_music` and `stem_dialogue` come from Demucs `htdemucs_ft`;
   per-speaker stems are gated from the diarization turns
 - Real transcription: WhisperX `large-v3-turbo` with word alignment
-- Real diarization: pyannote `speaker-diarization-3.1` with
-  `segmentation-3.0` and `wespeaker-voxceleb-resnet34-LM`, baked into the image
+- Real diarization: NVIDIA Nemotron-3-Diarization in an isolated Python venv
 - Speaker-attributed transcript fed into the before/after renderers and `ROUGH-CUT.md`
-- Endpoint release #13 pinned to `ghcr.io/ahmednabiled/parecut-worker:sha-c12bc4e`
+- Endpoint release #14 pinned to `ghcr.io/ahmednabiled/parecut-worker:sha-61c6fa7`
 - R2 browser uploads proxied through FastAPI, with worker artifact uploads still using
   direct presigned R2 URLs; text artifacts served same-origin for previews and copy
 - Deterministic cut rules for restart false starts and same-speaker retakes; the
@@ -139,7 +138,8 @@ Implemented:
 - `RunpodPipelineRunner` and `HttpRunpodClient` behind `PipelineRunner`
 - `jobs.runpod_job_id` added by migration `f34d11320711`
 - `runpod_app/worker.py` with DeepFilterNet3 denoising, WhisperX transcription and
-  alignment, pyannote diarization, Demucs separation, and gated speaker stems
+  alignment, NVIDIA Nemotron-3-Diarization, Demucs separation, and gated speaker stems
+- `runpod_app/nemotron_diarize.py`, run in an isolated `/opt/nemotron` venv
 - `runpod_app/Dockerfile` with the full worker image
 - `parecut-audio` endpoint `yf16hg8td6au29`, queue-based, 24 GB AMPERE_24 (L4/A5000/3090),
   0-2 workers, 10s idle timeout, 4h execution timeout, FlashBoot on
@@ -149,9 +149,9 @@ Implemented:
   submitted to `parecut-audio` (`runpod_job_id` recorded), the worker ran and the job
   completed in about 27 seconds with 15 artifacts
 - After release #6, a noisy speech job completed with `Denoised Audio (DeepFilterNet3)`
-- After release #13, a two-voice sample produced two speakers, four aligned transcript
-  segments, Demucs music/dialogue stems, two gated speaker stems, and real before/after
-  transcripts and `ROUGH-CUT.md`
+- After release #14, a two-voice sample and a 55.7s interview MP3 both produced two
+  speakers, aligned transcript segments, Demucs music/dialogue stems, two gated speaker
+  stems, and real before/after transcripts and `ROUGH-CUT.md`
 
 Worker image:
 
@@ -161,14 +161,16 @@ Worker image:
   `ghcr.io/ahmednabiled/parecut-worker:sha-<short>`.
 - The repository is private, so Runpod uses the `ghcr-parecut` registry credential with a
   GitHub PAT scoped to `read:packages`.
-- Endpoint release #13 runs `ghcr.io/ahmednabiled/parecut-worker:sha-c12bc4e`.
+- Endpoint release #14 runs `ghcr.io/ahmednabiled/parecut-worker:sha-61c6fa7`.
 - The private pull was verified end to end: a fresh worker pulled the private image,
   processed jobs, and uploaded artifacts to R2.
 - The image bakes DeepFilterNet3, WhisperX `large-v3-turbo`, the English alignment
-  model, Demucs `htdemucs_ft`, and the pyannote diarization models.
-- The gated pyannote terms were accepted on the `ahmednabiled` Hugging Face account.
-  The build uses the `HF_TOKEN` GitHub Actions secret through a BuildKit secret; the
-  token is not persisted in the image.
+  model, Demucs `htdemucs_ft`, and NVIDIA Nemotron-3-Diarization.
+- Nemotron runs in a separate `/opt/nemotron` venv with Python 3.11, torch 2.6.0, and
+  transformers 5.22.1. The main worker stays on torch 2.2.2 so DeepFilterNet and
+  WhisperX remain stable.
+- `pyannote.audio` remains in the main venv only because WhisperX uses it for VAD;
+  speaker diarization is Nemotron.
 - Use a new `sha-<short>` release for each worker change. The `dev` tag is mutable, so
   the endpoint is pinned to an immutable tag.
 
@@ -177,12 +179,12 @@ Current worker:
 - Noise reduction: `ffmpeg` converts the source to 48 kHz mono, DeepFilterNet3 denoises
   it, and the result is uploaded as `cleaned_audio`.
 - Separation: Demucs `htdemucs_ft` produces `stem_music` and `stem_dialogue`.
-  Per-speaker stems are gated from the pyannote turns, up to eight speakers.
+  Per-speaker stems are gated from the diarization turns, up to eight speakers.
 - Transcription: WhisperX 3.3.1 `large-v3-turbo` with the English alignment model.
   Aligned words are assigned to speakers and merged into readable segments.
-- Diarization: pyannote `speaker-diarization-3.1` with `segmentation-3.0` and
-  `wespeaker-voxceleb-resnet34-LM`. If the model fails, the worker logs the error and
-  falls back to one speaker instead of failing the whole job.
+- Diarization: NVIDIA Nemotron-3-Diarization via `/opt/nemotron/diarize.py`. If the
+  model fails, the worker logs the error and falls back to one speaker instead of
+  failing the whole job.
 - Cut outputs: the real speaker-attributed transcript is the canonical
   `transcript_before.json`; `build_cut_plan`, the before/after renderers, and
   `ROUGH-CUT.md` use it. `PATCH /speakers` regenerates from the real transcript.
@@ -190,8 +192,10 @@ Current worker:
   `Denoised Audio (Enhancement pending)`. Resemble Enhance is not installed.
 - The image uses Python 3.11 because `deepfilterlib` has no Python 3.12 wheel.
   It installs `ffmpeg`, `git`, `libsndfile1`, CPU torch/torchaudio 2.2.2, `soundfile`,
-  `whisperx==3.3.1`, `pyannote.audio==3.3.2`, `demucs==4.1.0`, and
+  `whisperx==3.3.1`, `pyannote.audio==3.3.2` (WhisperX VAD), `demucs==4.1.0`, and
   `transformers==4.48.3`.
+- The `/opt/nemotron` venv installs torch/torchaudio 2.6.0, `transformers==5.22.1`,
+  `numpy<2`, `soundfile`, `librosa`, and `accelerate`.
 - CTranslate2 is overridden to 4.6.0 after the WhisperX install: 4.4/4.5 fail on newer
   glibc with "cannot enable executable stack", while 4.6 works with faster-whisper 1.1.0.
 - DeepFilterNet is installed with `--no-deps` because its `packaging<24` pin conflicts
@@ -219,8 +223,7 @@ Architecture:
 Model stack currently deployed:
 
 - Noise reduction: DeepFilterNet3
-- Diarization: pyannote `speaker-diarization-3.1` with `segmentation-3.0` and
-  `wespeaker-voxceleb-resnet34-LM`
+- Diarization: NVIDIA Nemotron-3-Diarization
 - Transcription: WhisperX 3.3.1 `large-v3-turbo` with English word alignment
 - Music separation: Demucs `htdemucs_ft`
 - Speaker stems: diarization-gated audio (not true target-speaker extraction)
@@ -334,9 +337,9 @@ through `PATCH /speakers` with both speakers still presenters. The before-cut SR
 "Today we're gonna— sorry, let me go again."; the after-cut SRT dropped it; and
 `ROUGH-CUT.md` listed it as a `FALSE_START` in the remove table and audit log.
 
-The full model stack was verified on release #13 with a two-voice test clip:
+The full model stack was verified on release #13 with a two-voice test clip (pyannote):
 
-- pyannote found `SPEAKER_00` and `SPEAKER_01`.
+- two speakers were detected.
 - WhisperX produced four aligned, speaker-attributed segments.
 - Demucs produced real music and dialogue stems.
 - The worker produced two gated speaker stems.
@@ -344,9 +347,23 @@ The full model stack was verified on release #13 with a two-voice test clip:
   `SPEAKER_01=feeder` removed its two lines from the after transcript and changed the
   `ROUGH-CUT.md` speaker map to `REMOVE ALL`.
 
-A 33s WhatsApp OGG voice note also completed with real transcription, denoising, and
-Demucs stems. It ran on the pre-#13 worker and used the one-speaker fallback; jobs on
-release #13 use the aligned, diarized path.
+After switching diarization to NVIDIA Nemotron on release #14, a 55.7s interview MP3
+completed on worker `xrxqo29k1jqsck`:
+
+- 15 artifacts with real labels
+- two speakers and 34 diarization turns
+- real speaker-attributed transcript (the clip's speech was detected as English)
+- Demucs music and dialogue stems
+- two gated speaker stems
+- `diarization.fallback` was false and `diarization.error` was null
+
+The job is `/jobs/0a9b102f-b42b-4f06-ba46-7b4131a0cdfc`. A 33s WhatsApp OGG voice note
+also completed with real transcription, denoising, and Demucs stems; it ran on the
+pre-#13 worker and used the one-speaker fallback. Jobs on release #14 use Nemotron.
+
+The 55.7s interview clip is mixed-language and was detected as English; the Arabic
+section was not fully transcribed. A forced-language option (or per-segment language
+handling) with the matching alignment model is the next transcript improvement.
 
 Production serving was verified on the FastAPI process: `GET /` returns the built SPA,
 `GET /jobs/abc` returns the SPA for deep links, `/brand/login-logo.png` returns the
@@ -392,6 +409,7 @@ brand asset, and `/api/does-not-exist` returns JSON 404.
 - `3cc10b3`: CTranslate2 4.6 for newer glibc
 - `4a5daf2`: bake all pyannote diarization models
 - `c12bc4e`: word alignment and speaker-split transcript
+- `61c6fa7`: NVIDIA Nemotron-3-Diarization worker
 - `e660ac9`: correct real vs demo labels after role regeneration
 - `bc3e498`: FastAPI serves the built SPA
 
@@ -403,12 +421,14 @@ The progress file itself adds one more documentation commit after these.
    the DeepFilterNet3 output and is labeled `Denoised Audio (Enhancement pending)`.
 2. Replace the gated per-speaker stems with true target-speaker extraction
    (MossFormer2-SS) if the product needs overlapping-speech separation.
-3. Add LLM take selection on top of the deterministic rule pass. The current rules
+3. Add a language selector/forced language for mixed-language recordings and bake the
+   matching alignment models.
+4. Add LLM take selection on top of the deterministic rule pass. The current rules
    remove silence, feeder lines, restart false starts, and same-speaker retakes.
-4. Create `parecut-separate`; publish a new `sha-<short>` worker release for each change.
-5. Optional: add R2 CORS if direct browser uploads should replace the FastAPI proxy.
-6. Consider CUDA torch for faster inference; the current worker is CPU-only.
-7. Add Redis, Stripe, OAuth, and retention.
+5. Create `parecut-separate`; publish a new `sha-<short>` worker release for each change.
+6. Optional: add R2 CORS if direct browser uploads should replace the FastAPI proxy.
+7. Consider CUDA torch for faster inference; the current worker is CPU-only.
+8. Add Redis, Stripe, OAuth, and retention.
 
 ## Non-negotiables
 

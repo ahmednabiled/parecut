@@ -32,8 +32,7 @@ Implemented:
 - real noise reduction with DeepFilterNet3
 - real music/dialogue separation with Demucs `htdemucs_ft`
 - real transcription with WhisperX 3.3.1 `large-v3-turbo` and English word alignment
-- real diarization with pyannote `speaker-diarization-3.1`, `segmentation-3.0`, and
-  `wespeaker-voxceleb-resnet34-LM`
+- real diarization with NVIDIA Nemotron-3-Diarization
 - per-speaker gated stems
 - a speaker-attributed canonical transcript that drives the before/after transcripts
   and `ROUGH-CUT.md`
@@ -47,6 +46,8 @@ Still pending:
 - Resemble Enhance; `enhanced_audio` currently reuses the denoised audio and is labeled
   `Denoised Audio (Enhancement pending)`
 - true target-speaker separation; per-speaker stems are gated from diarization turns
+- language selection/forced language for mixed-language recordings, with matching
+  alignment models
 - LLM take selection
 - CUDA inference; the current worker runs CPU torch
 - Redis, Stripe billing, OAuth, and retention
@@ -59,7 +60,8 @@ plain checkout.
 
 - Backend: FastAPI, SQLModel and SQLAlchemy, Alembic, SQLite by default (Postgres-ready), Argon2, PyJWT, SSE
 - Frontend: React, Vite, TypeScript, Tailwind CSS, TanStack Query
-- Worker: Python 3.11, DeepFilterNet3, Demucs, WhisperX, pyannote, CPU torch 2.2.2
+- Worker: Python 3.11, DeepFilterNet3, Demucs, WhisperX, NVIDIA Nemotron-3-Diarization.
+  Main stack uses CPU torch 2.2.2; Nemotron runs in an isolated torch 2.6/transformers 5.x venv.
 - GPU: Runpod Serverless queue endpoint `parecut-audio`
 - Storage: Cloudflare R2 for remote workers, local signed storage for development
 
