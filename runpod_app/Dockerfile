@@ -86,6 +86,12 @@ PY
 RUN pip install --no-cache-dir --no-deps "ctranslate2==4.6.0"
 RUN python -c "import ctranslate2, whisperx; print('ctranslate2', ctranslate2.__version__)"
 
+RUN python - <<'PY'
+import whisperx
+
+whisperx.load_align_model(language_code="en", device="cpu")
+PY
+
 ENV HF_HUB_OFFLINE=1
 ENV TRANSFORMERS_OFFLINE=1
 

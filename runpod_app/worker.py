@@ -38,6 +38,7 @@ Separator = Callable[[Path, Path], tuple[bytes, bytes]]
 _MODEL = None
 _STATE = None
 _WHISPER_MODEL = None
+_ALIGN_MODELS: dict[str, tuple[Any, Any]] = {}
 _DIARIZATION_PIPELINE = None
 _DEMUCS_MODEL = None
 
@@ -182,6 +183,19 @@ def _get_whisper_model():
     return _WHISPER_MODEL
 
 
+def _get_align_model(language: str) -> tuple[Any, Any]:
+    if language not in _ALIGN_MODELS:
+        import whisperx
+
+        logger.info("loading alignment model for %s", language)
+        _ALIGN_MODELS[language] = whisperx.load_align_model(
+            language_code=language,
+            device="cpu",
+        )
+        logger.info("alignment model ready for %s", language)
+    return _ALIGN_MODELS[language]
+
+
 def transcribe_audio(
     wav_path: Path, *, transcriber: Transcriber | None = None
 ) -> Transcript:
@@ -193,19 +207,76 @@ def transcribe_audio(
     model = _get_whisper_model()
     audio = whisperx.load_audio(str(wav_path))
     result = model.transcribe(audio, batch_size=8)
+    segments = result.get("segments", [])
+    language = str(result.get("language") or "en")
 
-    segments = [
+    words: list[TranscriptSegment] = []
+    try:
+        align_model, metadata = _get_align_model(language)
+        aligned = whisperx.align(
+            segments,
+            align_model,
+            metadata,
+            audio,
+            device="cpu",
+            return_char_alignments=False,
+        )
+        for segment in aligned.get("segments", []):
+            for word in segment.get("words", []):
+                start = word.get("start")
+                end = word.get("end")
+                text = str(word.get("word", "")).strip()
+                if start is None or end is None or not text:
+                    continue
+                words.append(
+                    TranscriptSegment(
+                        speaker="SPEAKER_01",
+                        start=float(start),
+                        end=float(end),
+                        text=text,
+                    )
+                )
+    except Exception:
+        logger.exception("alignment failed; using segment timestamps")
+
+    if words:
+        return Transcript(speakers=["SPEAKER_01"], segments=words)
+
+    fallback = [
         TranscriptSegment(
             speaker="SPEAKER_01",
             start=float(segment["start"]),
             end=float(segment["end"]),
             text=str(segment.get("text", "")).strip(),
         )
-        for segment in result.get("segments", [])
+        for segment in segments
         if str(segment.get("text", "")).strip()
     ]
-    speakers = ["SPEAKER_01"] if segments else []
-    return Transcript(speakers=speakers, segments=segments)
+    return Transcript(
+        speakers=["SPEAKER_01"] if fallback else [],
+        segments=fallback,
+    )
+
+
+def merge_words(transcript: Transcript) -> Transcript:
+    if not transcript.segments:
+        return transcript
+
+    merged: list[TranscriptSegment] = []
+    current = transcript.segments[0].model_copy()
+    for segment in transcript.segments[1:]:
+        text = current.text.rstrip()
+        same_speaker = segment.speaker == current.speaker
+        sentence_end = text.endswith((".", "!", "?"))
+        too_long = current.end - current.start >= 8.0
+        if same_speaker and not sentence_end and not too_long:
+            current.text = f"{text} {segment.text.lstrip()}".strip()
+            current.end = segment.end
+        else:
+            merged.append(current)
+            current = segment.model_copy()
+    merged.append(current)
+    return Transcript(speakers=transcript.speakers, segments=merged)
 
 
 def _get_diarization_pipeline():
@@ -441,6 +512,7 @@ def handler(
         if config.transcribe:
             transcript = transcribe_audio(working_wav, transcriber=transcriber)
             transcript = assign_speakers(transcript, turns)
+            transcript = merge_words(transcript)
 
         roles: dict[str, SpeakerRole] = {
             speaker: "presenter" for speaker in transcript.speakers
