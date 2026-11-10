@@ -35,11 +35,13 @@ Transcriber = Callable[[Path], Transcript]
 Diarizer = Callable[[Path], list["SpeakerTurn"]]
 Separator = Callable[[Path, Path], tuple[bytes, bytes]]
 
+NEMOTRON_PYTHON = "/opt/nemotron/bin/python"
+NEMOTRON_SCRIPT = "/opt/nemotron/diarize.py"
+
 _MODEL = None
 _STATE = None
 _WHISPER_MODEL = None
 _ALIGN_MODELS: dict[str, tuple[Any, Any]] = {}
-_DIARIZATION_PIPELINE = None
 _DEMUCS_MODEL = None
 
 
@@ -74,7 +76,9 @@ def _upload(client: httpx.Client, url: str, content: bytes, mime: str) -> None:
     response.raise_for_status()
 
 
-def _convert_to_wav(input_path: Path, output_path: Path) -> None:
+def _convert_to_wav(
+    input_path: Path, output_path: Path, sample_rate: int = 48000
+) -> None:
     try:
         subprocess.run(
             [
@@ -89,7 +93,7 @@ def _convert_to_wav(input_path: Path, output_path: Path) -> None:
                 "-ac",
                 "1",
                 "-ar",
-                "48000",
+                str(sample_rate),
                 "-c:a",
                 "pcm_s16le",
                 str(output_path),
@@ -279,36 +283,46 @@ def merge_words(transcript: Transcript) -> Transcript:
     return Transcript(speakers=transcript.speakers, segments=merged)
 
 
-def _get_diarization_pipeline():
-    global _DIARIZATION_PIPELINE
-    if _DIARIZATION_PIPELINE is None:
-        from pyannote.audio import Pipeline
-
-        logger.info("loading pyannote diarization")
-        token = os.getenv("HF_TOKEN") or False
-        _DIARIZATION_PIPELINE = Pipeline.from_pretrained(
-            "pyannote/speaker-diarization-3.1",
-            use_auth_token=token,
-        )
-        logger.info("pyannote diarization ready")
-    return _DIARIZATION_PIPELINE
-
-
 def diarize_audio(
     wav_path: Path, *, diarizer: Diarizer | None = None
 ) -> list[SpeakerTurn]:
     if diarizer is not None:
         return diarizer(wav_path)
 
-    pipeline = _get_diarization_pipeline()
-    annotation = pipeline(str(wav_path))
+    with tempfile.TemporaryDirectory() as tmp:
+        diar_wav = Path(tmp) / "diarize.wav"
+        turns_path = Path(tmp) / "turns.json"
+        logger.info("running Nemotron diarization")
+        _convert_to_wav(wav_path, diar_wav, sample_rate=16000)
+
+        try:
+            subprocess.run(
+                [
+                    NEMOTRON_PYTHON,
+                    NEMOTRON_SCRIPT,
+                    str(diar_wav),
+                    str(turns_path),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=900,
+            )
+        except subprocess.CalledProcessError as exc:
+            stderr = (exc.stderr or "")[-1000:]
+            raise RuntimeError(f"Nemotron diarization failed: {stderr}") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("Nemotron diarization timed out") from exc
+
+        payload = json.loads(turns_path.read_text(encoding="utf-8"))
+
     return [
         SpeakerTurn(
-            speaker=str(speaker),
-            start=float(turn.start),
-            end=float(turn.end),
+            speaker=str(item["speaker"]),
+            start=float(item["start"]),
+            end=float(item["end"]),
         )
-        for turn, _, speaker in annotation.itertracks(yield_label=True)
+        for item in payload
     ]
 
 

@@ -60,27 +60,6 @@ from demucs.pretrained import get_model
 get_model("htdemucs_ft")
 PY
 
-RUN --mount=type=secret,id=HF_TOKEN HF_TOKEN=$(cat /run/secrets/HF_TOKEN) python - <<'PY'
-import os
-
-from huggingface_hub import snapshot_download
-from pyannote.audio import Pipeline
-
-token = os.environ["HF_TOKEN"]
-for repo in (
-    "pyannote/speaker-diarization-3.1",
-    "pyannote/segmentation-3.0",
-    "pyannote/wespeaker-voxceleb-resnet34-LM",
-):
-    print("downloading", repo)
-    snapshot_download(repo, use_auth_token=token)
-
-Pipeline.from_pretrained(
-    "pyannote/speaker-diarization-3.1",
-    use_auth_token=token,
-)
-PY
-
 # WhisperX 3.3.1 pins ctranslate2<4.5, but 4.4/4.5 fail on newer glibc with
 # "cannot enable executable stack". 4.6.0 works with faster-whisper 1.1.0.
 RUN pip install --no-cache-dir --no-deps "ctranslate2==4.6.0"
@@ -91,6 +70,31 @@ import whisperx
 
 whisperx.load_align_model(language_code="en", device="cpu")
 PY
+
+# Nemotron-3-Diarization needs torch 2.6+/transformers 5.x. Keep it in a
+# separate venv so DeepFilterNet, WhisperX, and Demucs stay on torch 2.2.2.
+RUN python -m venv /opt/nemotron
+RUN /opt/nemotron/bin/pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu \
+    "torch==2.6.0+cpu" "torchaudio==2.6.0+cpu"
+RUN /opt/nemotron/bin/pip install --no-cache-dir \
+    "transformers==5.22.1" \
+    "numpy<2" \
+    "soundfile==0.14.0" \
+    "librosa" \
+    "accelerate"
+COPY runpod_app/nemotron_diarize.py /opt/nemotron/diarize.py
+
+RUN python - <<'PY'
+import wave
+
+with wave.open("/tmp/nemotron_smoke.wav", "wb") as writer:
+    writer.setnchannels(1)
+    writer.setsampwidth(2)
+    writer.setframerate(16000)
+    writer.writeframes(b"\x00\x00" * 16000)
+PY
+RUN /opt/nemotron/bin/python /opt/nemotron/diarize.py \
+    /tmp/nemotron_smoke.wav /tmp/nemotron_smoke.json
 
 ENV HF_HUB_OFFLINE=1
 ENV TRANSFORMERS_OFFLINE=1
