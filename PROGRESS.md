@@ -50,6 +50,8 @@ Complete:
 - Job detail at `/jobs/:id`: live SSE stage timeline with polling fallback, speaker-role
   editor with PATCH regeneration, audio players, before/after transcripts, rendered
   `ROUGH-CUT.md`, downloads, and copy-for-coding-agent
+- FastAPI serves the built SPA with deep-link fallback, static assets, brand files, and
+  JSON 404s for unknown `/api` routes
 - Monochrome Material 3 visual system with Google Sans and the Pare Cut script logo
 - Backend tests, frontend tests, typecheck, and production build
 - Cloudflare R2 storage adapter behind `ObjectStorage`, verified with real put/get/delete
@@ -75,7 +77,6 @@ Complete:
 
 Pending:
 
-- Task 20: FastAPI serving the built SPA, README polish, final verification
 - Resemble Enhance for the enhancement stage; `enhanced_audio` currently reuses the
   DeepFilterNet3 output and is labeled `Denoised Audio (Enhancement pending)`
 - True target-speaker separation; per-speaker stems are currently gated by diarization
@@ -255,8 +256,8 @@ Official docs:
 
 At the time of writing:
 
-- API: http://localhost:8000, health returns 200
-- Web: http://localhost:5173, returns 200
+- API: http://localhost:8000, health returns 200, and the built SPA is served there too
+- Web: http://localhost:5173, returns 200 for Vite development
 - LAN: http://192.168.1.53:5173
 - Demo login: `demo@parecut.app` / `parecut-demo`
 - The backend seeds one demo user and one completed demo job with 15 artifacts
@@ -297,7 +298,7 @@ Default local data:
 
 ## Verification
 
-- Backend: `uv run pytest -q` -> 63 passed
+- Backend: `uv run pytest -q` -> 65 passed
 - Frontend: `cd web && npm test` -> 19 passed
 - Typecheck: `cd web && npm run typecheck`
 - Build: `cd web && npm run build` (one chunk-size warning from react-markdown)
@@ -347,6 +348,10 @@ A 33s WhatsApp OGG voice note also completed with real transcription, denoising,
 Demucs stems. It ran on the pre-#13 worker and used the one-speaker fallback; jobs on
 release #13 use the aligned, diarized path.
 
+Production serving was verified on the FastAPI process: `GET /` returns the built SPA,
+`GET /jobs/abc` returns the SPA for deep links, `/brand/login-logo.png` returns the
+brand asset, and `/api/does-not-exist` returns JSON 404.
+
 ## Important files
 
 - `README.md`: project overview and setup
@@ -388,6 +393,7 @@ release #13 use the aligned, diarized path.
 - `4a5daf2`: bake all pyannote diarization models
 - `c12bc4e`: word alignment and speaker-split transcript
 - `e660ac9`: correct real vs demo labels after role regeneration
+- `bc3e498`: FastAPI serves the built SPA
 
 The progress file itself adds one more documentation commit after these.
 
@@ -399,11 +405,10 @@ The progress file itself adds one more documentation commit after these.
    (MossFormer2-SS) if the product needs overlapping-speech separation.
 3. Add LLM take selection on top of the deterministic rule pass. The current rules
    remove silence, feeder lines, restart false starts, and same-speaker retakes.
-4. Task 20: serve the built SPA from FastAPI, finish README and manual smoke test.
-5. Create `parecut-separate`; publish a new `sha-<short>` worker release for each change.
-6. Optional: add R2 CORS if direct browser uploads should replace the FastAPI proxy.
-7. Consider CUDA torch for faster inference; the current worker is CPU-only.
-8. Add Redis, Stripe, OAuth, and retention.
+4. Create `parecut-separate`; publish a new `sha-<short>` worker release for each change.
+5. Optional: add R2 CORS if direct browser uploads should replace the FastAPI proxy.
+6. Consider CUDA torch for faster inference; the current worker is CPU-only.
+7. Add Redis, Stripe, OAuth, and retention.
 
 ## Non-negotiables
 
