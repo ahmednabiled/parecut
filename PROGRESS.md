@@ -70,6 +70,8 @@ Complete:
 - Deterministic cut rules for restart false starts and same-speaker retakes; the
   after-cut transcript and `ROUGH-CUT.md` now differ from the before transcript even
   when every speaker is a presenter
+- Speaker-role regeneration uses the real canonical transcript and keeps real artifact
+  labels; mock/demo jobs still get `Demo —` labels
 
 Pending:
 
@@ -295,7 +297,7 @@ Default local data:
 
 ## Verification
 
-- Backend: `uv run pytest -q` -> 61 passed
+- Backend: `uv run pytest -q` -> 63 passed
 - Frontend: `cd web && npm test` -> 19 passed
 - Typecheck: `cd web && npm run typecheck`
 - Build: `cd web && npm run build` (one chunk-size warning from react-markdown)
@@ -385,6 +387,7 @@ release #13 use the aligned, diarized path.
 - `3cc10b3`: CTranslate2 4.6 for newer glibc
 - `4a5daf2`: bake all pyannote diarization models
 - `c12bc4e`: word alignment and speaker-split transcript
+- `e660ac9`: correct real vs demo labels after role regeneration
 
 The progress file itself adds one more documentation commit after these.
 
