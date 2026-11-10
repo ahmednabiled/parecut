@@ -214,9 +214,10 @@ def _get_diarization_pipeline():
         from pyannote.audio import Pipeline
 
         logger.info("loading pyannote diarization")
+        token = os.getenv("HF_TOKEN") or False
         _DIARIZATION_PIPELINE = Pipeline.from_pretrained(
             "pyannote/speaker-diarization-3.1",
-            use_auth_token=os.getenv("HF_TOKEN"),
+            use_auth_token=token,
         )
         logger.info("pyannote diarization ready")
     return _DIARIZATION_PIPELINE
@@ -423,12 +424,15 @@ def handler(
         duration = float(data.get("duration_seconds") or _wav_duration(working_wav))
 
         turns: list[SpeakerTurn] = []
+        diarization_fallback = False
         if config.transcribe or config.separate_speakers:
             try:
                 turns = diarize_audio(working_wav, diarizer=diarizer)
             except Exception:
                 logger.exception("diarization failed; using one speaker")
+                diarization_fallback = True
             if not turns:
+                diarization_fallback = True
                 turns = [SpeakerTurn("SPEAKER_01", 0.0, duration)]
 
         transcript = Transcript(speakers=[], segments=[])
@@ -509,6 +513,11 @@ def handler(
         "artifacts": artifacts,
         "stages": stages,
         "speaker_roles": roles,
+        "diarization": {
+            "fallback": diarization_fallback,
+            "turns": len(turns),
+            "speakers": sorted({turn.speaker for turn in turns}),
+        },
     }
 
 
