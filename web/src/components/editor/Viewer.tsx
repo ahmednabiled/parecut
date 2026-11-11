@@ -59,8 +59,8 @@ export default function Viewer({
   }
 
   return (
-    <section className="rounded-xl border border-outline-variant bg-surface-container p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <section className="rounded-xl border border-outline-variant bg-surface-container p-5 xl:flex xl:h-full xl:min-h-0 xl:flex-col">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-[15px] font-medium text-on-surface">Captions</h2>
           <p className="mt-1 text-[12px] text-on-surface-variant">
@@ -96,7 +96,7 @@ export default function Viewer({
         </div>
       </div>
 
-      <div className="mt-5 flex min-h-[210px] items-center justify-center rounded-lg border border-outline-variant bg-surface-container-lowest px-6 py-8 text-center">
+      <div className="mt-5 flex min-h-[210px] shrink-0 items-center justify-center rounded-lg border border-outline-variant bg-surface-container-lowest px-6 py-8 text-center xl:min-h-[110px] xl:py-4">
         {loading ? (
           <p className="flex items-center gap-2 text-[13px] text-on-surface-variant">
             <span className="spinner" aria-hidden="true" />
@@ -133,7 +133,7 @@ export default function Viewer({
       </div>
 
       {cues.length > 0 ? (
-        <div className="mt-4 max-h-56 space-y-1 overflow-y-auto pr-1">
+        <div className="mt-4 min-h-0 max-h-56 space-y-1 overflow-y-auto overscroll-contain pr-1 xl:max-h-none xl:flex-1">
           {cues.map((cue, index) => {
             const key = captionCueKey(cue);
             const active = cue === current;

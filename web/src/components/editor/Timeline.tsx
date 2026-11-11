@@ -45,8 +45,8 @@ export default function Timeline({
   }
 
   return (
-    <section className="rounded-xl border border-outline-variant bg-surface-container p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <section className="rounded-xl border border-outline-variant bg-surface-container p-5 xl:flex xl:h-full xl:min-h-0 xl:flex-col">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -65,7 +65,7 @@ export default function Timeline({
         </p>
       </div>
 
-      <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_64px]">
+      <div className="mt-5 grid min-h-0 gap-4 overscroll-contain lg:grid-cols-[minmax(0,1fr)_64px] xl:flex-1 xl:overflow-y-auto xl:pr-1">
         <div>
           <div
             className="flex justify-between border-b border-outline-variant pb-1 font-mono text-[10px] text-on-surface-variant"

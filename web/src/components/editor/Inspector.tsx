@@ -172,8 +172,8 @@ export default function Inspector({
   );
 
   return (
-    <aside className="space-y-6">
-      <section className="rounded-xl border border-outline-variant bg-surface-container p-5">
+    <aside className="min-w-0 space-y-6 xl:h-full xl:min-h-0 xl:overflow-y-auto xl:overflow-x-hidden xl:overscroll-contain xl:pr-1">
+      <section className="min-w-0 rounded-xl border border-outline-variant bg-surface-container p-5">
         <h2 className="text-[15px] font-medium text-on-surface">Inspector</h2>
         <p className="mt-1 text-[12px] leading-5 text-on-surface-variant">
           Effects are non-destructive. Each run reserves credits when it starts
@@ -223,7 +223,7 @@ export default function Inspector({
         </div>
       </section>
 
-      <section className="rounded-xl border border-outline-variant bg-surface-container p-5">
+      <section className="min-w-0 rounded-xl border border-outline-variant bg-surface-container p-5">
         <h2 className="text-[15px] font-medium text-on-surface">
           Transcript &amp; cut
         </h2>

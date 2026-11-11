@@ -10,7 +10,7 @@ const ROLE_OPTIONS: { value: SpeakerRole; label: string }[] = [
 ];
 
 const fieldClass =
-  "h-11 w-full rounded border border-outline bg-transparent px-3 text-sm text-on-surface transition-[border-color,background-color] duration-150 ease-standard hover:border-on-surface-variant focus:border-on-surface disabled:cursor-not-allowed disabled:opacity-50";
+  "h-11 w-full min-w-0 rounded border border-outline bg-transparent px-3 text-sm text-on-surface transition-[border-color,background-color] duration-150 ease-standard hover:border-on-surface-variant focus:border-on-surface disabled:cursor-not-allowed disabled:opacity-50";
 
 export default function SpeakerRoles({
   job,
@@ -68,7 +68,7 @@ export default function SpeakerRoles({
     <div>
       <div className="grid gap-4 sm:grid-cols-2">
         {speakers.map((speaker) => (
-          <div key={speaker}>
+          <div key={speaker} className="min-w-0">
             <label
               htmlFor={`speaker-${speaker}`}
               className="mb-2 block font-mono text-[12px] text-on-surface-variant"

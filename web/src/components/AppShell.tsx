@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useMatch, useNavigate } from "react-router-dom";
 import { apiFetch } from "../api/client";
 import type { ProfileResponse } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
@@ -19,6 +19,7 @@ export default function AppShell() {
   const { me } = useAuth();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const editor = useMatch("/jobs/:id");
   const profileQuery = useQuery<ProfileResponse>({
     queryKey: ["profile"],
     queryFn: () => apiFetch<ProfileResponse>("/api/profile"),
@@ -36,7 +37,11 @@ export default function AppShell() {
   }
 
   return (
-    <div className="flex min-h-screen bg-surface text-on-surface">
+    <div
+      className={`flex bg-surface text-on-surface ${
+        editor ? "xl:h-screen xl:overflow-hidden" : "min-h-screen"
+      }`}
+    >
       <aside className="hidden w-60 shrink-0 flex-col border-r border-outline-variant bg-surface-container-low px-3 py-5 lg:flex">
         <NavLink to="/" className="px-2 py-1">
           <img src="/brand/login-logo.png" alt="Pare Cut" className="h-14 w-auto" />
@@ -116,8 +121,20 @@ export default function AppShell() {
           </div>
         </header>
 
-        <main className="flex-1 px-5 py-8 sm:px-8 lg:px-10">
-          <div className="mx-auto max-w-6xl">
+        <main
+          className={
+            editor
+              ? "min-w-0 flex-1 px-5 py-8 sm:px-8 lg:px-10 xl:flex xl:min-h-0 xl:flex-col xl:overflow-hidden xl:py-6"
+              : "min-w-0 flex-1 px-5 py-8 sm:px-8 lg:px-10"
+          }
+        >
+          <div
+            className={
+              editor
+                ? "mx-auto w-full min-w-0 max-w-[1600px] xl:flex xl:min-h-0 xl:flex-1 xl:flex-col"
+                : "mx-auto max-w-6xl"
+            }
+          >
             <Outlet />
           </div>
         </main>

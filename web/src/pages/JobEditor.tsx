@@ -421,8 +421,8 @@ export default function JobEditor() {
     }));
 
   return (
-    <div>
-      <div className="flex flex-wrap items-start justify-between gap-4">
+    <div className="flex flex-col xl:h-full xl:min-h-0 xl:flex-1">
+      <div className="flex shrink-0 flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="truncate text-[32px] font-semibold leading-10 tracking-[-0.02em]">
@@ -451,7 +451,7 @@ export default function JobEditor() {
       {project.status === "failed" ? (
         <div
           role="alert"
-          className="mt-6 rounded-xl border border-error/25 bg-error-container p-4 text-sm text-on-error-container"
+          className="mt-6 shrink-0 rounded-xl border border-error/25 bg-error-container p-4 text-sm text-on-error-container"
         >
           <p className="font-medium">
             This project failed{project.error_code ? ` (${project.error_code})` : ""}.
@@ -463,8 +463,8 @@ export default function JobEditor() {
         </div>
       ) : null}
 
-      <div className="mt-8 grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,23rem)] xl:items-start">
-        <div className="space-y-6">
+      <div className="mt-8 grid min-h-0 min-w-0 gap-6 xl:flex-1 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,23rem)] xl:overflow-hidden">
+        <div className="flex min-h-0 min-w-0 flex-col gap-6 xl:grid xl:min-h-0 xl:grid-rows-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
           <Viewer
             cues={editedCues}
             currentTime={audio.currentTime}
