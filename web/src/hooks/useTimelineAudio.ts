@@ -27,6 +27,10 @@ export function useTimelineAudio(
   const analyserRef = useRef<AnalyserNode | null>(null);
   const rafRef = useRef<number | null>(null);
   const masterRef = useRef<HTMLAudioElement | null>(null);
+  const timeRef = useRef(0);
+  const lastUiRef = useRef(0);
+  const seekTargetRef = useRef<number | null>(null);
+  const seekStartedRef = useRef(0);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -72,6 +76,11 @@ export function useTimelineAudio(
     for (const element of elements.current.values()) {
       element.pause();
     }
+    const master = masterRef.current;
+    if (master) {
+      timeRef.current = master.currentTime;
+      setCurrentTime(master.currentTime);
+    }
     setIsPlaying(false);
     setLevels({ left: 0, right: 0 });
     if (rafRef.current !== null) {
@@ -83,7 +92,20 @@ export function useTimelineAudio(
   const tick = useCallback(function tick() {
     const master = masterRef.current;
     if (master) {
-      if (!master.paused) {
+      const seekTarget = seekTargetRef.current;
+      let displayTime = master.currentTime;
+
+      if (seekTarget !== null) {
+        const elapsed = performance.now() - seekStartedRef.current;
+        if (
+          (!master.seeking && Math.abs(master.currentTime - seekTarget) < 0.5) ||
+          elapsed > 700
+        ) {
+          seekTargetRef.current = null;
+        } else {
+          displayTime = seekTarget;
+        }
+      } else if (!master.paused) {
         for (const element of elements.current.values()) {
           if (
             element === master ||
@@ -100,27 +122,34 @@ export function useTimelineAudio(
           }
         }
       }
-      setCurrentTime(master.currentTime);
+
+      timeRef.current = displayTime;
       if (master.ended) {
         pause();
         return;
       }
     }
 
-    const analyser = analyserRef.current;
-    if (analyser) {
-      const data = new Uint8Array(analyser.fftSize);
-      analyser.getByteTimeDomainData(data);
-      let sum = 0;
-      let peak = 0;
-      for (const value of data) {
-        const sample = (value - 128) / 128;
-        sum += sample * sample;
-        peak = Math.max(peak, Math.abs(sample));
+    const now = performance.now();
+    if (now - lastUiRef.current >= 60) {
+      lastUiRef.current = now;
+      setCurrentTime(timeRef.current);
+
+      const analyser = analyserRef.current;
+      if (analyser) {
+        const data = new Uint8Array(analyser.fftSize);
+        analyser.getByteTimeDomainData(data);
+        let sum = 0;
+        let peak = 0;
+        for (const value of data) {
+          const sample = (value - 128) / 128;
+          sum += sample * sample;
+          peak = Math.max(peak, Math.abs(sample));
+        }
+        const rms = Math.sqrt(sum / data.length);
+        const level = Math.min(1, Math.max(rms * 2.4, peak * 0.6));
+        setLevels({ left: level, right: level });
       }
-      const rms = Math.sqrt(sum / data.length);
-      const level = Math.min(1, Math.max(rms * 2.4, peak * 0.6));
-      setLevels({ left: level, right: level });
     }
 
     rafRef.current = requestAnimationFrame(tick);
@@ -215,6 +244,9 @@ export function useTimelineAudio(
   const seek = useCallback(
     (time: number) => {
       const target = Math.max(0, Math.min(duration, time));
+      seekTargetRef.current = target;
+      seekStartedRef.current = performance.now();
+      timeRef.current = target;
       for (const element of elements.current.values()) {
         try {
           element.currentTime = Math.min(target, element.duration || target);
@@ -231,6 +263,8 @@ export function useTimelineAudio(
     if (isPlaying) pause();
     else void play();
   }, [isPlaying, pause, play]);
+
+  const getCurrentTime = useCallback(() => timeRef.current, []);
 
   useEffect(() => {
     const original = elements.current.get("original");
@@ -280,5 +314,6 @@ export function useTimelineAudio(
     pause,
     seek,
     toggle,
+    getCurrentTime,
   };
 }

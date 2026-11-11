@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useRef, useState } from "react";
 import { formatMediaTime } from "../../lib/format";
 import Icon from "../Icon";
 import type { EditorTrack, ProcessingRun } from "./types";
@@ -8,6 +9,7 @@ interface TimelineProps {
   onToggleMute: (id: string) => void;
   duration: number;
   currentTime: number;
+  getCurrentTime: () => number;
   onSeek: (time: number) => void;
   isPlaying: boolean;
   onTogglePlay: () => void;
@@ -28,20 +30,86 @@ export default function Timeline({
   onToggleMute,
   duration,
   currentTime,
+  getCurrentTime,
   onSeek,
   isPlaying,
   onTogglePlay,
   levels,
   processing,
 }: TimelineProps) {
-  const percent =
-    duration > 0 ? Math.max(0, Math.min(100, (currentTime / duration) * 100)) : 0;
+  const laneRef = useRef<HTMLDivElement | null>(null);
+  const playheadRef = useRef<HTMLDivElement | null>(null);
+  const scrubbingRef = useRef(false);
+  const [scrubbing, setScrubbing] = useState(false);
 
-  function handleSeek(event: React.MouseEvent<HTMLDivElement>) {
-    const rect = event.currentTarget.getBoundingClientRect();
+  const paintPlayhead = useCallback(() => {
+    const element = playheadRef.current;
+    if (!element) return;
+    const time = getCurrentTime();
+    const ratio =
+      duration > 0 ? Math.max(0, Math.min(1, time / duration)) : 0;
+    const percent = ratio * 100;
+    element.style.left = `calc(${percent}% + ${
+      TRACK_OFFSET * (1 - percent / 100)
+    }px)`;
+  }, [duration, getCurrentTime]);
+
+  useEffect(() => {
+    paintPlayhead();
+    if (!isPlaying) return;
+    let frame = 0;
+    const loop = () => {
+      paintPlayhead();
+      frame = requestAnimationFrame(loop);
+    };
+    frame = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(frame);
+  }, [isPlaying, paintPlayhead]);
+
+  useEffect(() => {
+    if (!isPlaying) paintPlayhead();
+  }, [currentTime, isPlaying, paintPlayhead]);
+
+  function timeAt(clientX: number): number | null {
+    const rect = laneRef.current?.getBoundingClientRect();
+    if (!rect) return null;
     const usable = Math.max(1, rect.width - TRACK_OFFSET);
-    const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left - TRACK_OFFSET) / usable));
-    onSeek(ratio * duration);
+    const ratio = Math.max(
+      0,
+      Math.min(1, (clientX - rect.left - TRACK_OFFSET) / usable),
+    );
+    return ratio * duration;
+  }
+
+  function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return;
+    const target = event.target as HTMLElement;
+    if (target.closest("button,a,input,select")) return;
+    const time = timeAt(event.clientX);
+    if (time === null) return;
+
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    scrubbingRef.current = true;
+    setScrubbing(true);
+    onSeek(time);
+  }
+
+  function handlePointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    if (!scrubbingRef.current) return;
+    const target = timeAt(event.clientX);
+    if (target !== null) onSeek(target);
+  }
+
+  function endScrub(event: React.PointerEvent<HTMLDivElement>) {
+    if (!scrubbingRef.current) return;
+    scrubbingRef.current = false;
+    setScrubbing(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    const target = timeAt(event.clientX);
+    if (target !== null) onSeek(target);
   }
 
   return (
@@ -61,7 +129,7 @@ export default function Timeline({
           </span>
         </div>
         <p className="text-[12px] text-on-surface-variant">
-          Click the tracks to seek. Mute one layer to hear another.
+          Drag the tracks to scrub. Mute one layer to hear another.
         </p>
       </div>
 
@@ -76,7 +144,17 @@ export default function Timeline({
             ))}
           </div>
 
-          <div className="relative mt-2 cursor-crosshair" onClick={handleSeek}>
+          <div
+            ref={laneRef}
+            className={`relative mt-2 touch-none select-none ${
+              scrubbing ? "cursor-grabbing" : "cursor-crosshair"
+            }`}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={endScrub}
+            onPointerCancel={endScrub}
+            onLostPointerCapture={endScrub}
+          >
             {tracks.map((track, index) => {
               const groupChanged =
                 index === 0 || tracks[index - 1].group !== track.group;
@@ -142,10 +220,8 @@ export default function Timeline({
             ))}
 
             <div
-              className="pointer-events-none absolute bottom-0 top-0 w-px bg-primary"
-              style={{
-                left: `calc(${percent}% + ${TRACK_OFFSET * (1 - percent / 100)}px)`,
-              }}
+              ref={playheadRef}
+              className="pointer-events-none absolute bottom-0 top-0 w-px will-change-[left] bg-primary"
             >
               <span className="absolute -left-1.5 -top-1.5 size-3 rotate-45 border border-primary bg-surface" />
             </div>

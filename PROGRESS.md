@@ -48,8 +48,8 @@ Complete:
 - New project flow at `/new`: drag-and-drop upload with XHR progress and FPS select;
   uploads create a draft project and open an empty timeline with only the source track
 - Non-destructive editor at `/jobs/:id`: source and effect tracks, synchronized Web Audio
-  playback with per-track mute, playhead seeking, analyser meters with a dB readout,
-  same-origin ranged audio streaming, and viewport-filling panes that scroll
+  playback with per-track mute, click-and-drag scrubbing, analyser meters with a dB
+  readout, same-origin ranged audio streaming, and viewport-filling panes that scroll
   independently
 - On-demand inspector effects: noise reduction, enhancement with mix, music separation,
   speaker separation, and transcribe + rough cut. Each effect is a child job

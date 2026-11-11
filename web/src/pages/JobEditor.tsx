@@ -483,6 +483,7 @@ export default function JobEditor() {
             onToggleMute={handleToggleMute}
             duration={duration}
             currentTime={audio.currentTime}
+            getCurrentTime={audio.getCurrentTime}
             onSeek={audio.seek}
             isPlaying={audio.isPlaying}
             onTogglePlay={audio.toggle}
