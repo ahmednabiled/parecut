@@ -2,30 +2,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ApiError, apiFetch } from "../api/client";
-import type {
-  Job,
-  PipelineConfig,
-  PresignResponse,
-  ProfileResponse,
-} from "../api/types";
+import type { Job, PresignResponse, ProfileResponse } from "../api/types";
 import Dropzone from "../components/Dropzone";
 import Panel from "../components/Panel";
-import PipelineToggles from "../components/PipelineToggles";
 import { readAudioDuration, validateUploadFile } from "../lib/audio";
-import { estimateCredits, validatePipeline } from "../lib/credits";
-import { formatDuration } from "../lib/format";
 
 const FPS_OPTIONS = ["24", "25", "29.97", "30", "60"];
-
-const DEFAULT_PIPELINE: PipelineConfig = {
-  noise_reduction: true,
-  enhance: true,
-  enhance_mix: 0.8,
-  separate_music: true,
-  separate_speakers: true,
-  transcribe: true,
-  rough_cut: true,
-};
 
 const fieldClass =
   "h-12 w-full rounded border border-outline bg-transparent px-4 text-[15px] text-on-surface transition-[border-color,background-color] duration-150 ease-standard hover:border-on-surface-variant focus:border-on-surface";
@@ -78,11 +60,6 @@ function putFile(
   });
 }
 
-interface Shortfall {
-  required: number;
-  available: number;
-}
-
 export default function NewJob() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -93,14 +70,12 @@ export default function NewJob() {
 
   const [file, setFile] = useState<File | null>(null);
   const [duration, setDuration] = useState<number | null>(null);
-  const [config, setConfig] = useState<PipelineConfig>(DEFAULT_PIPELINE);
   const [fps, setFps] = useState("25");
   const [progress, setProgress] = useState<number | null>(null);
   const [uploadKey, setUploadKey] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
-  const [shortfall, setShortfall] = useState<Shortfall | null>(null);
 
   const hydrated = useRef(false);
   const selectionId = useRef(0);
@@ -112,10 +87,6 @@ export default function NewJob() {
     if (!data || hydrated.current) return;
     hydrated.current = true;
     setFps(data.profile.default_fps);
-    setConfig((current) => ({
-      ...current,
-      enhance_mix: data.profile.default_enhance_mix / 100,
-    }));
   }, [profileQuery.data]);
 
   useEffect(() => {
@@ -132,7 +103,6 @@ export default function NewJob() {
     setProgress(0);
     setUploadKey(null);
     setError(null);
-    setShortfall(null);
 
     try {
       const presign = await apiFetch<PresignResponse>("/api/uploads", {
@@ -177,7 +147,6 @@ export default function NewJob() {
 
     setFileError(null);
     setError(null);
-    setShortfall(null);
     setFile(nextFile);
     setDuration(null);
     setUploadKey(null);
@@ -200,22 +169,14 @@ export default function NewJob() {
     setUploadKey(null);
     setFileError(null);
     setError(null);
-    setShortfall(null);
   }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!file || !uploadKey) return;
 
-    const validation = validatePipeline(config);
-    if (validation) {
-      setError(validation);
-      return;
-    }
-
     setSubmitting(true);
     setError(null);
-    setShortfall(null);
     try {
       const job = await apiFetch<Job>("/api/jobs", {
         method: "POST",
@@ -223,30 +184,20 @@ export default function NewJob() {
           upload_key: uploadKey,
           source_filename: file.name,
           fps,
-          pipeline: config,
+          draft: true,
         }),
       });
-      queryClient.invalidateQueries({ queryKey: ["profile"] });
+      void queryClient.invalidateQueries({ queryKey: ["profile"] });
       navigate(`/jobs/${job.id}`);
     } catch (err) {
       if (err instanceof ApiError && err.status === 402) {
-        const payload = err.payload as {
-          required_minutes?: unknown;
-          available_minutes?: unknown;
-        } | null;
-        const required =
-          typeof payload?.required_minutes === "number"
-            ? payload.required_minutes
-            : estimateCredits(duration);
-        const available =
-          typeof payload?.available_minutes === "number"
-            ? payload.available_minutes
-            : (profileQuery.data?.profile.credit_balance_minutes ?? 0);
-        setShortfall({ required, available });
+        setError(
+          "Insufficient credits for this upload. Top up, then try again.",
+        );
       } else if (err instanceof ApiError || err instanceof Error) {
         setError(err.message);
       } else {
-        setError("Could not create the job. Try again.");
+        setError("Could not create the project. Try again.");
       }
     } finally {
       setSubmitting(false);
@@ -254,23 +205,22 @@ export default function NewJob() {
   }
 
   const uploadInProgress = progress !== null && progress < 100;
-  const pipelineError = validatePipeline(config);
   const canSubmit = Boolean(
-    file && uploadKey && !submitting && !uploadInProgress && !pipelineError,
+    file && uploadKey && !submitting && !uploadInProgress,
   );
   const balance = profileQuery.data?.profile.credit_balance_minutes ?? 0;
-  const estimated = estimateCredits(duration);
 
   return (
     <div>
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-[32px] font-semibold leading-10 tracking-[-0.02em]">
-            New job
+            New project
           </h1>
           <p className="mt-2 max-w-[58ch] text-[15px] leading-6 text-on-surface-variant">
-            Upload a recording, choose the stages, and prepare clean audio, a
-            speaker-attributed transcript, and a frame-accurate cut plan.
+            Upload a recording to open the editor. The original stays untouched;
+            apply effects, listen to the layers, and export captions from the
+            timeline.
           </p>
         </div>
         <Link
@@ -285,33 +235,20 @@ export default function NewJob() {
         onSubmit={submit}
         className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.65fr)] lg:items-start"
       >
-        <div className="space-y-6">
-          <Panel
-            title="Source media"
-            description="Audio or video from the shoot. The original file is never modified."
-          >
-            <Dropzone
-              file={file}
-              duration={duration}
-              progress={progress}
-              disabled={submitting}
-              error={fileError}
-              onSelect={(next) => void selectFile(next)}
-              onClear={clearFile}
-            />
-          </Panel>
-
-          <Panel
-            title="Pipeline"
-            description="Run the whole chain or only the stages you need."
-          >
-            <PipelineToggles
-              config={config}
-              onChange={setConfig}
-              disabled={submitting}
-            />
-          </Panel>
-        </div>
+        <Panel
+          title="Source media"
+          description="Audio or video from the shoot. Creating a project costs no credits."
+        >
+          <Dropzone
+            file={file}
+            duration={duration}
+            progress={progress}
+            disabled={submitting}
+            error={fileError}
+            onSelect={(next) => void selectFile(next)}
+            onClear={clearFile}
+          />
+        </Panel>
 
         <aside className="space-y-6 lg:sticky lg:top-8">
           <Panel
@@ -342,21 +279,11 @@ export default function NewJob() {
             </p>
           </Panel>
 
-          <Panel title="Estimate">
+          <Panel title="Project">
             <dl className="space-y-3 text-[13px]">
               <div className="flex items-baseline justify-between gap-4">
-                <dt className="text-on-surface-variant">Source duration</dt>
-                <dd className="font-mono text-on-surface">
-                  {file
-                    ? duration === null
-                      ? "Server reads it"
-                      : formatDuration(duration)
-                    : "—"}
-                </dd>
-              </div>
-              <div className="flex items-baseline justify-between gap-4">
-                <dt className="text-on-surface-variant">Estimated reserve</dt>
-                <dd className="font-mono text-on-surface">{estimated} min</dd>
+                <dt className="text-on-surface-variant">Credits used now</dt>
+                <dd className="font-mono text-on-surface">0 min</dd>
               </div>
               <div className="flex items-baseline justify-between gap-4 border-t border-outline-variant pt-3">
                 <dt className="text-on-surface-variant">Available</dt>
@@ -367,29 +294,9 @@ export default function NewJob() {
             </dl>
 
             <p className="mt-4 text-[12px] leading-5 text-on-surface-variant">
-              The reserve is charged when the job starts and refunded if it
-              fails. Each started minute is billed as a whole minute.
+              Effects reserve minutes when they start and refund them if they
+              fail. You choose each effect in the editor.
             </p>
-
-            {shortfall ? (
-              <div className="mt-5 rounded-lg border border-error/25 bg-error-container p-4">
-                <p className="text-sm text-on-error-container">
-                  Insufficient credits: need {shortfall.required}, have{" "}
-                  {shortfall.available}.
-                </p>
-                <p className="mt-2 text-[13px] leading-5 text-on-error-container/80">
-                  Top-ups are not available in this build. Your upload is saved,
-                  so you can retry after adding credits.
-                </p>
-                <button
-                  type="button"
-                  disabled
-                  className="mt-3 h-9 rounded-[18px] border border-error/30 px-4 text-[13px] text-on-error-container/60"
-                >
-                  Top up (coming soon)
-                </button>
-              </div>
-            ) : null}
 
             {error ? (
               <div
@@ -409,22 +316,16 @@ export default function NewJob() {
               </div>
             ) : null}
 
-            {pipelineError ? (
-              <p className="mt-4 text-[12px] leading-5 text-on-surface-variant">
-                {pipelineError}
-              </p>
-            ) : null}
-
             <button
               type="submit"
               disabled={!canSubmit}
               className="mt-5 h-11 w-full rounded-[20px] bg-primary px-5 text-sm font-semibold text-on-primary transition-colors duration-150 ease-standard hover:bg-[#dcdcdc] active:bg-[#c9c9c9] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {submitting
-                ? "Creating job…"
+                ? "Creating project…"
                 : uploadInProgress
                   ? "Uploading…"
-                  : "Create job"}
+                  : "Open editor"}
             </button>
           </Panel>
         </aside>

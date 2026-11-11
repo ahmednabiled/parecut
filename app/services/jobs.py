@@ -4,11 +4,38 @@ from fastapi import HTTPException, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.config import Settings
-from app.models import Job, User, UserProfile
-from app.schemas import JobCreate
+from app.models import Job, User, UserProfile, utcnow
+from app.schemas import EffectCreate, EffectName, JobCreate
 from app.services.credits import add_ledger_entry, reserve_minutes
 from app.services.stages import initial_stage_states
 from app.storage import ObjectStorage
+from parecut_engine.schemas import PipelineConfig
+
+DRAFT_CONFIG = PipelineConfig(
+    noise_reduction=False,
+    enhance=False,
+    separate_music=False,
+    separate_speakers=False,
+    transcribe=False,
+    rough_cut=False,
+)
+
+
+def effect_config(effect: EffectName, enhance_mix: float | None = None) -> PipelineConfig:
+    values = DRAFT_CONFIG.model_dump()
+    if effect == "noise_reduction":
+        values["noise_reduction"] = True
+    elif effect == "enhance":
+        values["enhance"] = True
+        values["enhance_mix"] = enhance_mix if enhance_mix is not None else 0.8
+    elif effect == "separate_music":
+        values["separate_music"] = True
+    elif effect == "separate_speakers":
+        values["separate_speakers"] = True
+    elif effect == "transcribe":
+        values["transcribe"] = True
+        values["rough_cut"] = True
+    return PipelineConfig.model_validate(values)
 
 
 async def load_job(session: AsyncSession, user: User, job_id: str) -> Job:
@@ -46,6 +73,30 @@ async def create_job(
 
     metadata = await storage.metadata(data.upload_key)
     duration = metadata.duration_seconds if metadata is not None else None
+
+    if data.draft:
+        now = utcnow()
+        job = Job(
+            user_id=user.id,
+            status="completed",
+            source_filename=data.source_filename,
+            source_r2_key=data.upload_key,
+            duration_seconds=duration,
+            sample_rate=metadata.sample_rate if metadata is not None else None,
+            fps=data.fps,
+            pipeline_config=DRAFT_CONFIG.model_dump(),
+            speaker_roles={},
+            stage_states={
+                stage: state.model_dump(mode="json")
+                for stage, state in initial_stage_states(DRAFT_CONFIG).items()
+            },
+            started_at=now,
+            completed_at=now,
+        )
+        session.add(job)
+        await session.commit()
+        return job
+
     minutes = reserve_minutes(duration)
 
     profile = await session.get(UserProfile, user.id)
@@ -69,6 +120,70 @@ async def create_job(
         stage_states={
             stage: state.model_dump(mode="json")
             for stage, state in initial_stage_states(data.pipeline).items()
+        },
+    )
+    session.add(job)
+    await session.flush()
+
+    await add_ledger_entry(
+        session,
+        profile,
+        delta=-minutes,
+        reason="job_reserve",
+        job_id=job.id,
+    )
+    await session.commit()
+
+    try:
+        await runner.spawn(job.id)
+    except Exception:
+        job.status = "failed"
+        job.error_code = "spawn_failed"
+        session.add(job)
+        await add_ledger_entry(
+            session,
+            profile,
+            delta=minutes,
+            reason="job_refund",
+            job_id=job.id,
+        )
+        await session.commit()
+
+    return job
+
+
+async def create_effect_run(
+    session: AsyncSession,
+    user: User,
+    parent: Job,
+    runner,
+    data: EffectCreate,
+) -> Job:
+    minutes = reserve_minutes(parent.duration_seconds)
+    profile = await session.get(UserProfile, user.id)
+    if profile is None:
+        raise ProfileNotFound(user.id)
+
+    available = Decimal(profile.credit_balance_minutes or 0)
+    if available < minutes:
+        raise InsufficientCredits(minutes, available)
+
+    config = effect_config(data.effect, data.enhance_mix)
+    job = Job(
+        user_id=user.id,
+        parent_job_id=parent.id,
+        effect=data.effect,
+        status="queued",
+        source_filename=parent.source_filename,
+        source_r2_key=parent.source_r2_key,
+        duration_seconds=parent.duration_seconds,
+        sample_rate=parent.sample_rate,
+        fps=parent.fps,
+        pipeline_config=config.model_dump(),
+        speaker_roles={},
+        stage_states={
+            stage: state.model_dump(mode="json")
+            for stage, state in initial_stage_states(config).items()
         },
     )
     session.add(job)

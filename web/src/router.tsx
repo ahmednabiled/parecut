@@ -2,7 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import RequireAuth from "./auth/RequireAuth";
 import AppShell from "./components/AppShell";
 import Dashboard from "./pages/Dashboard";
-import JobDetail from "./pages/JobDetail";
+import JobEditor from "./pages/JobEditor";
 import Login from "./pages/Login";
 import NewJob from "./pages/NewJob";
 import Register from "./pages/Register";
@@ -22,7 +22,7 @@ export default function AppRoutes() {
       >
         <Route index element={<Dashboard />} />
         <Route path="new" element={<NewJob />} />
-        <Route path="jobs/:id" element={<JobDetail />} />
+        <Route path="jobs/:id" element={<JobEditor />} />
         <Route path="settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

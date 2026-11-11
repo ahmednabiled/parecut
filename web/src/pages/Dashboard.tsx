@@ -37,14 +37,14 @@ export default function Dashboard() {
             Dashboard
           </h1>
           <p className="mt-2 max-w-[52ch] text-[15px] leading-6 text-on-surface-variant">
-            Recent audio jobs and the deliverables they produced.
+            Recent audio projects and the deliverables they produced.
           </p>
         </div>
         <Link
           to="/new"
           className="inline-flex h-10 items-center rounded-[20px] bg-primary px-5 text-sm font-semibold text-on-primary transition-colors duration-150 ease-standard hover:bg-[#dcdcdc] active:bg-[#c9c9c9]"
         >
-          New job
+          New project
         </Link>
       </div>
 
@@ -65,7 +65,7 @@ export default function Dashboard() {
 
           <dl className="flex flex-col justify-center divide-y divide-outline-variant border-t border-outline-variant px-6 py-2 lg:border-l lg:border-t-0">
             <div className="flex items-baseline justify-between py-4">
-              <dt className="text-[13px] text-on-surface-variant">Jobs</dt>
+              <dt className="text-[13px] text-on-surface-variant">Projects</dt>
               <dd className="font-mono text-lg text-on-surface">
                 {profileQuery.isPending ? "..." : jobs.length}
               </dd>
@@ -82,7 +82,7 @@ export default function Dashboard() {
 
       <section className="mt-10">
         <h2 className="text-[22px] font-medium leading-7 tracking-[-0.01em]">
-          Recent jobs
+          Recent projects
         </h2>
 
         {profileQuery.isPending ? (
@@ -92,11 +92,11 @@ export default function Dashboard() {
           </p>
         ) : profileQuery.isError ? (
           <p className="mt-4 rounded-lg border border-error/25 bg-error-container px-4 py-3 text-sm text-on-error-container">
-            Could not load your jobs. Refresh to try again.
+            Could not load your projects. Refresh to try again.
           </p>
         ) : jobs.length === 0 ? (
           <div className="mt-4 rounded-xl border border-outline-variant bg-surface-container-low px-6 py-10">
-            <h3 className="text-[15px] font-medium text-on-surface">No jobs yet</h3>
+            <h3 className="text-[15px] font-medium text-on-surface">No projects yet</h3>
             <p className="mt-2 max-w-[52ch] text-[14px] leading-6 text-on-surface-variant">
               Upload a recording to create clean stems, a speaker-attributed
               transcript, and a rough-cut specification.
@@ -105,7 +105,7 @@ export default function Dashboard() {
               to="/new"
               className="mt-5 inline-flex h-10 items-center rounded-[20px] border border-outline px-5 text-sm font-medium text-on-surface transition-colors duration-150 ease-standard hover:bg-surface-container-high"
             >
-              Create a job
+              Create a project
             </Link>
           </div>
         ) : (

@@ -35,12 +35,16 @@ class ArtifactRead(BaseModel):
     format: str
     size_bytes: int
     download_url: str
+    content_url: str
 
 
 class JobRead(BaseModel):
     id: str
+    parent_job_id: str | None = None
+    effect: str | None = None
     status: str
     source_filename: str
+    source_url: str
     duration_seconds: float | None = None
     sample_rate: int | None = None
     fps: str
@@ -80,11 +84,26 @@ class LoginRequest(BaseModel):
     password: str
 
 
+EffectName = Literal[
+    "noise_reduction",
+    "enhance",
+    "separate_music",
+    "separate_speakers",
+    "transcribe",
+]
+
+
 class JobCreate(BaseModel):
     upload_key: str
     source_filename: str = Field(min_length=1)
     fps: FPS = "25"
     pipeline: PipelineConfig = Field(default_factory=PipelineConfig)
+    draft: bool = False
+
+
+class EffectCreate(BaseModel):
+    effect: EffectName
+    enhance_mix: float | None = Field(default=None, ge=0, le=1)
 
 
 class SpeakerRolesUpdate(BaseModel):
@@ -120,8 +139,11 @@ def to_profile_read(profile) -> ProfileRead:
 def to_job_read(job, artifacts=()) -> JobRead:
     return JobRead(
         id=job.id,
+        parent_job_id=job.parent_job_id,
+        effect=job.effect,
         status=job.status,
         source_filename=job.source_filename,
+        source_url=f"/api/jobs/{job.id}/source",
         duration_seconds=job.duration_seconds,
         sample_rate=job.sample_rate,
         fps=job.fps,
@@ -140,6 +162,7 @@ def to_job_read(job, artifacts=()) -> JobRead:
                 format=artifact.format,
                 size_bytes=artifact.size_bytes,
                 download_url=f"/api/jobs/{job.id}/artifacts/{artifact.id}/download",
+                content_url=f"/api/jobs/{job.id}/artifacts/{artifact.id}/content",
             )
             for artifact in artifacts
         ],

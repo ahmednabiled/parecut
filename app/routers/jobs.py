@@ -1,4 +1,5 @@
 import json
+import mimetypes
 from collections import defaultdict
 from pathlib import Path
 
@@ -13,10 +14,17 @@ from app.db import get_session
 from app.deps import get_current_user, get_settings_dep
 from app.events import EventBroker, get_broker
 from app.models import Job, JobArtifact, User
-from app.schemas import JobCreate, JobRead, SpeakerRolesUpdate, to_job_read
+from app.schemas import (
+    EffectCreate,
+    JobCreate,
+    JobRead,
+    SpeakerRolesUpdate,
+    to_job_read,
+)
 from app.services.jobs import (
     InsufficientCredits,
     UploadNotFound,
+    create_effect_run,
     create_job,
     load_job,
 )
@@ -32,6 +40,87 @@ TEXT_MEDIA_TYPES = {
     "vtt": "text/vtt",
     "json": "application/json",
 }
+
+CONTENT_MEDIA_TYPES = {
+    **TEXT_MEDIA_TYPES,
+    "wav": "audio/wav",
+}
+
+
+def insufficient_credits(exc: InsufficientCredits) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_402_PAYMENT_REQUIRED,
+        content={
+            "detail": "Insufficient credits",
+            "required_minutes": float(exc.required),
+            "available_minutes": float(exc.available),
+        },
+    )
+
+
+def range_bounds(value: str | None, total: int) -> tuple[int, int] | None:
+    if not value:
+        return None
+    header = value.strip()
+    if not header.startswith("bytes="):
+        return None
+    spec = header.removeprefix("bytes=").split(",", 1)[0].strip()
+    if "-" not in spec:
+        return None
+
+    start_text, end_text = (part.strip() for part in spec.split("-", 1))
+    try:
+        if not start_text:
+            if not end_text:
+                return None
+            suffix = int(end_text)
+            if suffix <= 0:
+                return None
+            start = max(0, total - suffix)
+            end = total - 1
+        else:
+            start = int(start_text)
+            end = int(end_text) if end_text else total - 1
+    except ValueError:
+        return None
+
+    if start >= total:
+        raise HTTPException(
+            status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE,
+            headers={"Content-Range": f"bytes */{total}"},
+        )
+    end = min(end, total - 1)
+    if end < start:
+        return None
+    return start, end
+
+
+async def media_response(
+    request: Request,
+    storage: ObjectStorage,
+    key: str,
+    media_type: str,
+    filename: str,
+) -> Response:
+    total = await storage.size(key)
+    bounds = range_bounds(request.headers.get("range"), total)
+    headers = {
+        "Accept-Ranges": "bytes",
+        "Content-Disposition": f'inline; filename="{filename}"',
+    }
+    if bounds is None:
+        data = await storage.get(key)
+        return Response(content=data, media_type=media_type, headers=headers)
+
+    start, end = bounds
+    data = await storage.get_range(key, start, end)
+    headers["Content-Range"] = f"bytes {start}-{end}/{total}"
+    return Response(
+        content=data,
+        status_code=status.HTTP_206_PARTIAL_CONTENT,
+        media_type=media_type,
+        headers=headers,
+    )
 
 
 @router.post("", response_model=JobRead, status_code=status.HTTP_201_CREATED)
@@ -50,14 +139,7 @@ async def create(
             status_code=status.HTTP_404_NOT_FOUND, detail="Upload not found"
         ) from exc
     except InsufficientCredits as exc:
-        return JSONResponse(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            content={
-                "detail": "Insufficient credits",
-                "required_minutes": float(exc.required),
-                "available_minutes": float(exc.available),
-            },
-        )
+        return insufficient_credits(exc)
     return to_job_read(job)
 
 
@@ -71,7 +153,7 @@ async def list_jobs(
     jobs = (
         await session.exec(
             select(Job)
-            .where(Job.user_id == user.id)
+            .where(Job.user_id == user.id, Job.parent_job_id.is_(None))
             .order_by(Job.created_at.desc())
             .offset(offset)
             .limit(limit)
@@ -109,6 +191,105 @@ async def get_job(
         )
     ).all()
     return to_job_read(job, artifacts)
+
+
+@router.get("/{job_id}/effects", response_model=list[JobRead])
+async def list_effects(
+    job_id: str,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[JobRead]:
+    parent = await load_job(session, user, job_id)
+    children = (
+        await session.exec(
+            select(Job)
+            .where(Job.parent_job_id == parent.id)
+            .order_by(Job.created_at)
+        )
+    ).all()
+    if not children:
+        return []
+
+    artifacts = (
+        await session.exec(
+            select(JobArtifact)
+            .where(JobArtifact.job_id.in_([child.id for child in children]))
+            .order_by(JobArtifact.created_at)
+        )
+    ).all()
+    grouped: dict[str, list[JobArtifact]] = defaultdict(list)
+    for artifact in artifacts:
+        grouped[artifact.job_id].append(artifact)
+
+    return [to_job_read(child, grouped[child.id]) for child in children]
+
+
+@router.post(
+    "/{job_id}/effects",
+    response_model=JobRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def apply_effect(
+    job_id: str,
+    payload: EffectCreate,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    runner: PipelineRunner = Depends(get_runner),
+):
+    parent = await load_job(session, user, job_id)
+    if parent.parent_job_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Effects can only be applied to a project",
+        )
+    try:
+        job = await create_effect_run(session, user, parent, runner, payload)
+    except InsufficientCredits as exc:
+        return insufficient_credits(exc)
+    return to_job_read(job)
+
+
+@router.get("/{job_id}/source")
+async def get_source(
+    job_id: str,
+    request: Request,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    storage: ObjectStorage = Depends(get_storage),
+) -> Response:
+    job = await load_job(session, user, job_id)
+    media_type = (
+        mimetypes.guess_type(job.source_filename)[0] or "application/octet-stream"
+    )
+    filename = Path(job.source_filename).name.replace('"', "")
+    return await media_response(
+        request, storage, job.source_r2_key, media_type, filename
+    )
+
+
+@router.get("/{job_id}/artifacts/{artifact_id}/content")
+async def artifact_content(
+    job_id: str,
+    artifact_id: str,
+    request: Request,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    storage: ObjectStorage = Depends(get_storage),
+) -> Response:
+    job = await load_job(session, user, job_id)
+    artifact = await session.get(JobArtifact, artifact_id)
+    if artifact is None or artifact.job_id != job.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found"
+        )
+    media_type = CONTENT_MEDIA_TYPES.get(artifact.format) or (
+        mimetypes.guess_type(Path(artifact.r2_key).name)[0]
+        or "application/octet-stream"
+    )
+    filename = Path(artifact.r2_key).name.replace('"', "")
+    return await media_response(
+        request, storage, artifact.r2_key, media_type, filename
+    )
 
 
 @router.patch("/{job_id}/speakers", response_model=JobRead)

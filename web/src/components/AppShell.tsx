@@ -7,7 +7,7 @@ import Icon, { type IconName } from "./Icon";
 
 const NAV: { to: string; label: string; icon: IconName; end: boolean }[] = [
   { to: "/", label: "Dashboard", icon: "dashboard", end: true },
-  { to: "/new", label: "New job", icon: "add", end: false },
+  { to: "/new", label: "New project", icon: "add", end: false },
   { to: "/settings", label: "Settings", icon: "settings", end: false },
 ];
 

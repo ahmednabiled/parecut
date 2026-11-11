@@ -63,6 +63,8 @@ class Job(SQLModel, table=True):
 
     id: str = Field(default_factory=new_id, primary_key=True)
     user_id: str = Field(foreign_key="users.id", index=True, ondelete="CASCADE")
+    parent_job_id: str | None = Field(default=None, index=True)
+    effect: str | None = Field(default=None, index=True)
     status: str = Field(default="queued", index=True)
     source_filename: str
     source_r2_key: str

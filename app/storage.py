@@ -31,6 +31,8 @@ class ObjectStorage(Protocol):
 
     async def get(self, key: str) -> bytes: ...
 
+    async def get_range(self, key: str, start: int, end: int) -> bytes: ...
+
     async def copy(self, src_key: str, dst_key: str) -> None: ...
 
     async def delete(self, key: str) -> None: ...
@@ -154,6 +156,14 @@ class LocalObjectStorage:
     async def get(self, key: str) -> bytes:
         return self._path(key).read_bytes()
 
+    async def get_range(self, key: str, start: int, end: int) -> bytes:
+        def read() -> bytes:
+            with self._path(key).open("rb") as handle:
+                handle.seek(start)
+                return handle.read(end - start + 1)
+
+        return await asyncio.to_thread(read)
+
     async def copy(self, src_key: str, dst_key: str) -> None:
         await self.put(dst_key, await self.get(src_key), "application/octet-stream")
 
@@ -244,6 +254,15 @@ class R2ObjectStorage:
     async def get(self, key: str) -> bytes:
         response = await asyncio.to_thread(
             self._client.get_object, Bucket=self.bucket, Key=key
+        )
+        return await asyncio.to_thread(response["Body"].read)
+
+    async def get_range(self, key: str, start: int, end: int) -> bytes:
+        response = await asyncio.to_thread(
+            self._client.get_object,
+            Bucket=self.bucket,
+            Key=key,
+            Range=f"bytes={start}-{end}",
         )
         return await asyncio.to_thread(response["Body"].read)
 

@@ -63,7 +63,79 @@ afterEach(() => {
 });
 
 describe("NewJob", () => {
-  it("shows the credit shortfall inline and keeps the form usable", async () => {
+  it("creates a draft project and opens the editor", async () => {
+    vi.stubGlobal("XMLHttpRequest", FakeXhr as unknown as typeof XMLHttpRequest);
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, _init?: RequestInit) => {
+        const url = String(input);
+      if (url === "/api/profile") {
+        return json({
+          user: {
+            id: "u1",
+            email: "a@example.com",
+            full_name: "A",
+            avatar_url: null,
+            created_at: "2026-01-01T00:00:00Z",
+          },
+          profile: {
+            credit_balance_minutes: 12,
+            default_fps: "25",
+            default_enhance_mix: 80,
+            default_silence_pad_ms: 150,
+          },
+          jobs: [],
+          ledger: [],
+        });
+      }
+      if (url === "/api/uploads") {
+        return json(
+          {
+            upload_url: "/api/uploads/token",
+            upload_key: "uploads/take.wav",
+            expires_at: "2026-01-01T00:15:00Z",
+          },
+          201,
+        );
+      }
+      if (url === "/api/jobs") {
+        return json({ id: "j1" }, 201);
+      }
+      throw new Error(`unexpected request: ${url}`);
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPage();
+
+    await userEvent.upload(
+      screen.getByLabelText(/source media file/i),
+      new File(["audio"], "take.wav", { type: "audio/wav" }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /open editor/i })).toBeEnabled(),
+    );
+    await userEvent.click(screen.getByRole("button", { name: /open editor/i }));
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(([url]) => String(url) === "/api/jobs"),
+      ).toBe(true);
+    });
+
+    const call = fetchMock.mock.calls.find(
+      ([url]) => String(url) === "/api/jobs",
+    );
+    const init = call?.[1] as RequestInit;
+    expect(JSON.parse(init.body as string)).toMatchObject({
+      upload_key: "uploads/take.wav",
+      source_filename: "take.wav",
+      fps: "25",
+      draft: true,
+    });
+  });
+
+  it("shows a credit error if the draft is rejected", async () => {
     vi.stubGlobal("XMLHttpRequest", FakeXhr as unknown as typeof XMLHttpRequest);
     vi.stubGlobal(
       "fetch",
@@ -79,7 +151,7 @@ describe("NewJob", () => {
               created_at: "2026-01-01T00:00:00Z",
             },
             profile: {
-              credit_balance_minutes: 1,
+              credit_balance_minutes: 0,
               default_fps: "25",
               default_enhance_mix: 80,
               default_silence_pad_ms: 150,
@@ -99,14 +171,7 @@ describe("NewJob", () => {
           );
         }
         if (url === "/api/jobs") {
-          return json(
-            {
-              detail: "Insufficient credits",
-              required_minutes: 3,
-              available_minutes: 1,
-            },
-            402,
-          );
+          return json({ detail: "Insufficient credits" }, 402);
         }
         throw new Error(`unexpected request: ${url}`);
       }),
@@ -118,15 +183,13 @@ describe("NewJob", () => {
       screen.getByLabelText(/source media file/i),
       new File(["audio"], "take.wav", { type: "audio/wav" }),
     );
-
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /create job/i })).toBeEnabled(),
+      expect(screen.getByRole("button", { name: /open editor/i })).toBeEnabled(),
     );
-    await userEvent.click(screen.getByRole("button", { name: /create job/i }));
+    await userEvent.click(screen.getByRole("button", { name: /open editor/i }));
 
     expect(
-      await screen.findByText("Insufficient credits: need 3, have 1."),
+      await screen.findByText(/insufficient credits for this upload/i),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /create job/i })).toBeEnabled();
   });
 });

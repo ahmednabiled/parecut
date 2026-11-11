@@ -1,6 +1,6 @@
 # Parecut Progress and Handoff
 
-Last updated: 2026-11-09
+Last updated: 2026-11-11
 
 This file is the compact handoff for the project. It records what was built, why, where it lives, and what comes next. A new session should read this file first, then the documents listed under "Source of truth".
 
@@ -45,11 +45,21 @@ Complete:
 - Speaker-role override that regenerates after-cut outputs
 - Idempotent demo seed and demo account
 - React shell with login, register, dashboard, and settings
-- New job flow at `/new`: drag-and-drop upload with XHR progress, pipeline toggles,
-  enhancement mix, FPS select, live credit estimate, and inline 402 shortfall handling
-- Job detail at `/jobs/:id`: live SSE stage timeline with polling fallback, speaker-role
-  editor with PATCH regeneration, audio players, before/after transcripts, rendered
-  `ROUGH-CUT.md`, downloads, and copy-for-coding-agent
+- New project flow at `/new`: drag-and-drop upload with XHR progress and FPS select;
+  uploads create a draft project and open an empty timeline with only the source track
+- Non-destructive editor at `/jobs/:id`: source and effect tracks, synchronized Web Audio
+  playback with per-track mute, playhead seeking, analyser meters with a dB readout, and
+  same-origin ranged audio streaming
+- On-demand inspector effects: noise reduction, enhancement with mix, music separation,
+  speaker separation, and transcribe + rough cut. Each effect is a child job
+  (`parent_job_id`, `effect`) that reserves credits, produces its own artifact, and adds
+  a muted track; effect runs are hidden from the dashboard and project lists
+- Captions from the most recent completed transcription run: word chunking, following
+  the playhead, inline text correction persisted locally, and corrected SRT download;
+  raw before/after transcripts and `ROUGH-CUT.md` remain downloadable
+- Speaker-role editing for the transcription run with regeneration of after-cut outputs
+- Same-origin source/artifact streaming with HTTP range support for seeking
+- Migration `c41e28897718` adds `jobs.parent_job_id` and `jobs.effect`
 - FastAPI serves the built SPA with deep-link fallback, static assets, brand files, and
   JSON 404s for unknown `/api` routes
 - Monochrome Material 3 visual system with Google Sans and the Pare Cut script logo
@@ -85,7 +95,7 @@ Pending:
 - Optional R2 bucket CORS if direct browser uploads replace the FastAPI proxy
 - Redis, Stripe, OAuth, retention
 
-Both `/new` and `/jobs/:id` are live. The new job page uploads immediately on file selection, keeps the returned `upload_key` across a 402 retry, and navigates to the job detail route after creation. The job detail page streams stage events over SSE, keeps a 3-second polling fallback, rebuilds from the saved snapshot after a reload, and regenerates after-cut artifacts synchronously when speaker roles change.
+Both `/new` and `/jobs/:id` are live. The new project page uploads on file selection and creates a no-cost draft; the editor opens with only the source track, so effects are chosen deliberately in the inspector rather than up front. Applying an effect creates a child job that reserves credit minutes and polls until it completes; its audio artifact becomes a muted track. The original track stays unmuted and unchanged, so muting it and unmuting an effect gives an A/B comparison. The editor streams source and effect audio same-origin with range requests, keeps tracks synchronized through the Web Audio graph, and reads the mixed signal for the meters. Captions come from the latest completed transcription run; chunk size and text corrections are client-side, and the corrected SRT is downloadable.
 
 The local `.env` now selects the real R2 + Runpod path. Browser uploads go to FastAPI and are written to R2 server-side, so they do not depend on R2 CORS. The worker still receives direct presigned R2 URLs for its outputs, and text artifacts are served by FastAPI so Markdown previews and copy work without cross-origin reads.
 
@@ -116,6 +126,10 @@ Job progress is stored in `jobs.stage_states`, so reloads and SSE reconnects reb
 - Credits are Decimal minutes. Signup bonus is 30 minutes. Reserve is `max(1, ceil(duration / 60))`.
 - The mock pipeline copies the uploaded audio and writes demo transcript artifacts. It is labeled as demo content and is not real audio analysis.
 - `transcript_before.json` is the canonical transcript. Speaker-role changes re-render after-cut and `ROUGH-CUT.md` from it.
+- Effects are non-destructive child jobs. They reuse the parent source key, run only their own stages, and add artifacts to the editor as tracks. The original source is never rewritten.
+- New effect tracks start muted; the source starts unmuted, so A/B listening is one mute click.
+- Caption chunking and text corrections are client-side. The corrected SRT is generated in the browser; the stored transcript artifacts are not edited.
+- Effect runs are excluded from the dashboard and profile project lists; they are fetched through `GET /api/jobs/{id}/effects`.
 - Orphaned queued or running jobs are failed and refunded at startup.
 - The UI is monochrome Material 3. No gradients, glass, glow, or amber accent. Error red is the only semantic color.
 - The auth page uses the script `Pare Cut` logo alone. The app sidebar uses the same logo alone. The P mark is only the favicon.
@@ -380,6 +394,10 @@ brand asset, and `/api/does-not-exist` returns JSON 404.
 - `app/`: FastAPI backend
 - `parecut_engine/`: shared pipeline, transcript, and event schemas
 - `web/`: React SPA
+- `web/src/pages/JobEditor.tsx`: timeline editor page
+- `web/src/components/editor/`: viewer, inspector, and timeline
+- `web/src/hooks/useTimelineAudio.ts`: Web Audio playback, mute, sync, and meters
+- `web/src/lib/captions.ts`: transcript parsing, chunking, and SRT/VTT export
 - `tests/`: backend tests
 - `web/public/brand/`: Pare Cut logo, cover, favicon
 

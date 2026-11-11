@@ -24,7 +24,10 @@ async def _build_response(
 ) -> ProfileResponse:
     jobs = (
         await session.exec(
-            select(Job).where(Job.user_id == user.id).order_by(Job.created_at.desc()).limit(10)
+            select(Job)
+            .where(Job.user_id == user.id, Job.parent_job_id.is_(None))
+            .order_by(Job.created_at.desc())
+            .limit(10)
         )
     ).all()
     ledger = (

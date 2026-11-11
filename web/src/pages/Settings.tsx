@@ -67,7 +67,7 @@ export default function Settings() {
         Settings
       </h1>
       <p className="mt-2 max-w-[52ch] text-[15px] leading-6 text-on-surface-variant">
-        Defaults apply to new jobs. Existing deliverables are unchanged.
+        Defaults apply to new projects. Existing deliverables are unchanged.
       </p>
 
       <form onSubmit={save} className="mt-8">

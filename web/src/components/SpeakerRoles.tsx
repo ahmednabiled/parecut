@@ -12,7 +12,13 @@ const ROLE_OPTIONS: { value: SpeakerRole; label: string }[] = [
 const fieldClass =
   "h-11 w-full rounded border border-outline bg-transparent px-3 text-sm text-on-surface transition-[border-color,background-color] duration-150 ease-standard hover:border-on-surface-variant focus:border-on-surface disabled:cursor-not-allowed disabled:opacity-50";
 
-export default function SpeakerRoles({ job }: { job: Job }) {
+export default function SpeakerRoles({
+  job,
+  onUpdated,
+}: {
+  job: Job;
+  onUpdated?: (job: Job) => void;
+}) {
   const queryClient = useQueryClient();
   const speakers = Object.keys(job.speaker_roles).sort();
   const locked = job.status === "queued" || job.status === "running";
@@ -34,6 +40,7 @@ export default function SpeakerRoles({ job }: { job: Job }) {
       setDraft(null);
       setNotice("Speaker roles saved. Cut outputs regenerated.");
       setError(null);
+      onUpdated?.(updated);
     },
     onError: (err) => {
       setError(

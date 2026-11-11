@@ -37,6 +37,11 @@ Implemented:
 - a speaker-attributed canonical transcript that drives the before/after transcripts
   and `ROUGH-CUT.md`
 - speaker-role switching that regenerates the after-cut transcript and `ROUGH-CUT.md`
+- a non-destructive timeline editor with synchronized multi-track playback, per-track
+  mute, meters, caption editing and downloads
+- on-demand effects that run as child jobs and add muted tracks without touching the
+  source: noise reduction, enhancement, music separation, speaker separation, and
+  transcribe + rough cut
 - deterministic false-start and same-speaker-retake removal
 - a seeded demo account and a monochrome Material 3 interface
 - FastAPI serving the built SPA with deep-link fallback in production
@@ -55,6 +60,21 @@ Still pending:
 The checked-in `.env.example` keeps the no-credentials local/mock path. The active
 development `.env` uses R2 + Runpod. The mock runner still exists for tests and for a
 plain checkout.
+
+## Editor model
+
+A project starts with an upload at `/new`. The project is a draft: it has the source
+track, costs no credits, and produces no artifacts. In `/jobs/:id`, effects are applied
+from the inspector. Each effect is a child job (`parent_job_id` + `effect`) that
+reserves credits, runs only its own stages, and adds its output as a muted track; the
+source is never rewritten.
+
+Source and effect audio stream same-origin with HTTP range support, so the browser can
+seek and keep tracks synchronized. Playback and per-track mute use the Web Audio API;
+the side meters read the mixed signal. Captions come from the most recent completed
+transcription run. Word chunking and text corrections are client-side, and the
+corrected SRT downloads from the viewer; the raw VTT and `ROUGH-CUT.md` download from
+the inspector.
 
 ## Stack
 
