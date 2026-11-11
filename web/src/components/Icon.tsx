@@ -1,4 +1,5 @@
 import add from "@material-symbols/svg-400/rounded/add.svg";
+import arrowBack from "@material-symbols/svg-400/rounded/arrow_back.svg";
 import audioFile from "@material-symbols/svg-400/rounded/audio_file.svg";
 import check from "@material-symbols/svg-400/rounded/check.svg";
 import close from "@material-symbols/svg-400/rounded/close.svg";
@@ -19,6 +20,7 @@ import type { CSSProperties } from "react";
 
 const ICONS = {
   add,
+  arrow_back: arrowBack,
   audio_file: audioFile,
   check,
   close,

@@ -124,7 +124,7 @@ export default function AppShell() {
         <main
           className={
             editor
-              ? "min-w-0 flex-1 px-5 py-8 sm:px-8 lg:px-10 xl:flex xl:min-h-0 xl:flex-col xl:overflow-hidden xl:py-6"
+              ? "min-w-0 flex-1 px-5 py-8 sm:px-8 lg:px-10 xl:flex xl:min-h-0 xl:flex-col xl:overflow-hidden xl:py-4"
               : "min-w-0 flex-1 px-5 py-8 sm:px-8 lg:px-10"
           }
         >

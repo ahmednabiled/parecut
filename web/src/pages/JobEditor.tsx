@@ -7,6 +7,7 @@ import Inspector from "../components/editor/Inspector";
 import Timeline from "../components/editor/Timeline";
 import type { EditorTrack } from "../components/editor/types";
 import Viewer from "../components/editor/Viewer";
+import Icon from "../components/Icon";
 import StatusPill from "../components/StatusPill";
 import { useTimelineAudio } from "../hooks/useTimelineAudio";
 import {
@@ -422,15 +423,13 @@ export default function JobEditor() {
 
   return (
     <div className="flex flex-col xl:h-full xl:min-h-0 xl:flex-1">
-      <div className="flex shrink-0 flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="truncate text-[32px] font-semibold leading-10 tracking-[-0.02em]">
-              {project.source_filename}
-            </h1>
-            <StatusPill status={project.status} />
-          </div>
-          <p className="mt-2 font-mono text-[13px] text-on-surface-variant">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-outline-variant pb-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+          <h1 className="truncate text-[18px] font-semibold leading-6 tracking-[-0.01em]">
+            {project.source_filename}
+          </h1>
+          <StatusPill status={project.status} />
+          <p className="font-mono text-[11px] text-on-surface-variant">
             {formatDuration(project.duration_seconds)} · {project.fps} fps
             {project.sample_rate ? ` · ${project.sample_rate} Hz` : ""}
             {" · "}
@@ -442,16 +441,17 @@ export default function JobEditor() {
 
         <Link
           to="/"
-          className="text-sm text-on-surface-variant underline decoration-outline underline-offset-4 transition-colors duration-150 ease-standard hover:text-on-surface hover:decoration-on-surface"
+          aria-label="Back to dashboard"
+          className="grid size-8 shrink-0 place-items-center rounded-full text-on-surface-variant transition-colors duration-150 ease-standard hover:bg-surface-container-high hover:text-on-surface"
         >
-          Back to dashboard
+          <Icon name="arrow_back" size={16} />
         </Link>
       </div>
 
       {project.status === "failed" ? (
         <div
           role="alert"
-          className="mt-6 shrink-0 rounded-xl border border-error/25 bg-error-container p-4 text-sm text-on-error-container"
+          className="mt-4 shrink-0 rounded-xl border border-error/25 bg-error-container p-4 text-sm text-on-error-container"
         >
           <p className="font-medium">
             This project failed{project.error_code ? ` (${project.error_code})` : ""}.
@@ -463,7 +463,7 @@ export default function JobEditor() {
         </div>
       ) : null}
 
-      <div className="mt-8 grid min-h-0 min-w-0 gap-6 xl:flex-1 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,23rem)] xl:overflow-hidden">
+      <div className="mt-4 grid min-h-0 min-w-0 gap-6 xl:flex-1 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,23rem)] xl:overflow-hidden">
         <div className="flex min-h-0 min-w-0 flex-col gap-6 xl:grid xl:min-h-0 xl:grid-rows-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
           <Viewer
             cues={editedCues}
