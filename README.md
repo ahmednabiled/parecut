@@ -43,8 +43,9 @@ Implemented:
   and `ROUGH-CUT.md`
 - speaker-role switching that regenerates the after-cut transcript and `ROUGH-CUT.md`
 - a non-destructive timeline editor with synchronized multi-track playback, per-track
-  mute, server-generated waveform peaks, click-and-drag scrubbing, caption editing and
-  downloads, and a fixed time ruler and meter rail beside the scrolling track list
+  mute, server-generated waveform peaks with low-saturation lane tints, click-and-drag
+  scrubbing, caption editing and downloads, and a fixed time ruler and meter rail beside
+  the scrolling track list
 - on-demand effects that run as child jobs and add muted tracks without touching the
   source: noise reduction, enhancement, music separation, speaker separation, and
   transcribe + rough cut

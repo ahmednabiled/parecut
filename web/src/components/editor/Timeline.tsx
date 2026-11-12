@@ -30,6 +30,45 @@ interface PeaksResponse {
 
 const TRACK_OFFSET = 36;
 
+interface TrackTone {
+  wave: string;
+  lane: string;
+  border: string;
+}
+
+const TRACK_TONES: TrackTone[] = [
+  {
+    wave: "#c7d4df",
+    lane: "rgba(199, 212, 223, 0.07)",
+    border: "rgba(199, 212, 223, 0.3)",
+  },
+  {
+    wave: "#c4d9cf",
+    lane: "rgba(196, 217, 207, 0.07)",
+    border: "rgba(196, 217, 207, 0.3)",
+  },
+  {
+    wave: "#ded0b8",
+    lane: "rgba(222, 208, 184, 0.07)",
+    border: "rgba(222, 208, 184, 0.3)",
+  },
+  {
+    wave: "#d8c7da",
+    lane: "rgba(216, 199, 218, 0.07)",
+    border: "rgba(216, 199, 218, 0.3)",
+  },
+  {
+    wave: "#e0c7c1",
+    lane: "rgba(224, 199, 193, 0.07)",
+    border: "rgba(224, 199, 193, 0.3)",
+  },
+  {
+    wave: "#cdd6c6",
+    lane: "rgba(205, 214, 198, 0.07)",
+    border: "rgba(205, 214, 198, 0.3)",
+  },
+];
+
 function meterDb(level: number): string {
   if (level <= 0.001) return "−∞";
   return Math.max(-48, 20 * Math.log10(level)).toFixed(0);
@@ -37,17 +76,16 @@ function meterDb(level: number): string {
 
 const Waveform = memo(function Waveform({
   peaks,
-  muted,
+  tone,
 }: {
   peaks: number[];
-  muted: boolean;
+  tone: TrackTone;
 }) {
   if (peaks.length < 2) {
     return (
       <div
-        className={`absolute inset-x-0 top-1/2 h-px ${
-          muted ? "bg-outline-variant/40" : "bg-outline-variant"
-        }`}
+        className="absolute inset-x-0 top-1/2 h-px"
+        style={{ backgroundColor: tone.border }}
       />
     );
   }
@@ -75,9 +113,8 @@ const Waveform = memo(function Waveform({
       viewBox="0 0 1000 100"
       preserveAspectRatio="none"
       aria-hidden="true"
-      className={`absolute inset-0 h-full w-full ${
-        muted ? "text-on-surface-variant/25" : "text-on-surface-variant/65"
-      }`}
+      className="absolute inset-0 h-full w-full"
+      style={{ color: tone.wave }}
     >
       <path d={`${upper}${lower}Z`} fill="currentColor" />
     </svg>
@@ -237,12 +274,19 @@ export default function Timeline({
                 const groupChanged =
                   index === 0 || tracks[index - 1].group !== track.group;
                 const isMuted = Boolean(muted[track.id]);
+                const tone = TRACK_TONES[index % TRACK_TONES.length];
                 return (
                   <div key={track.id}>
                     {groupChanged ? (
-                      <p className="mb-1 mt-3 text-[10px] font-medium uppercase tracking-[0.08em] text-on-surface-variant first:mt-0">
-                        {track.group}
-                      </p>
+                      <div className="mb-1 mt-3 flex items-center gap-2 first:mt-0">
+                        <span
+                          className="size-1.5 rounded-full"
+                          style={{ backgroundColor: tone.wave }}
+                        />
+                        <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-on-surface-variant">
+                          {track.group}
+                        </p>
+                      </div>
                     ) : null}
                     <div className="flex items-center gap-2 py-1">
                       <button
@@ -261,12 +305,14 @@ export default function Timeline({
                       </button>
                       <div
                         className={`relative h-10 min-w-0 flex-1 overflow-hidden rounded border ${
-                          isMuted
-                            ? "border-outline-variant bg-surface-container-low"
-                            : "border-outline bg-surface-container-lowest"
+                          isMuted ? "opacity-60" : ""
                         }`}
+                        style={{
+                          borderColor: tone.border,
+                          backgroundColor: tone.lane,
+                        }}
                       >
-                        <Waveform peaks={peaks[index]} muted={isMuted} />
+                        <Waveform peaks={peaks[index]} tone={tone} />
                         <div className="pointer-events-none absolute inset-0 flex items-center justify-between gap-2 px-2">
                           <span
                             className={`max-w-[78%] truncate rounded bg-surface-container/90 px-1.5 py-0.5 text-[11px] font-medium ${

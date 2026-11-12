@@ -53,8 +53,9 @@ Complete:
   independently
 - Waveform timeline: `ffmpeg`-generated peak arrays for the source and every audio
   artifact (`/source/peaks`, `/artifacts/{id}/peaks`), rendered as SVG envelopes behind
-  each track label. The time ruler and meter rail stay fixed while the track lanes
-  scroll.
+  each track label. Each lane uses a low-saturation pastel tint so sections are easy to
+  scan; controls and typography stay monochrome. The time ruler and meter rail stay
+  fixed while the track lanes scroll.
 - On-demand inspector effects: noise reduction, enhancement with mix, music separation,
   speaker separation, and transcribe + rough cut. Each effect is a child job
   (`parent_job_id`, `effect`) that reserves credits, produces its own artifact, and adds
