@@ -34,6 +34,9 @@ Implemented:
 - real transcription with WhisperX 3.3.1 `large-v3-turbo` and English word alignment
 - real enhancement with Resemble Enhance: 44.1 kHz restoration, bandwidth and body
   extension, a wet/dry mix, and CPU inference
+- a configurable studio finishing chain after Resemble: high-pass, body/mud/presence EQ,
+  de-esser, compressor, limiter, and loudness normalization in a collapsible panel that
+  is collapsed by default and stores its settings on each run
 - real diarization with NVIDIA Nemotron-3-Diarization
 - per-speaker gated stems
 - a speaker-attributed canonical transcript that drives the before/after transcripts
@@ -70,6 +73,11 @@ track, costs no credits, and produces no artifacts. In `/jobs/:id`, effects are 
 from the inspector. Each effect is a child job (`parent_job_id` + `effect`) that
 reserves credits, runs only its own stages, and adds its output as a muted track; the
 source is never rewritten.
+
+The Enhance effect runs DeepFilterNet3 and Resemble Enhance. Its Studio polish panel is
+collapsed by default; expanding it exposes high-pass, body/mud/presence EQ, de-essing,
+compression, limiting, and loudness controls. The panel can be switched off, and the
+values are stored on the effect run so the worker applies exactly what was set.
 
 Source and effect audio stream same-origin with HTTP range support, so the browser can
 seek and keep tracks synchronized. Playback and per-track mute use the Web Audio API;

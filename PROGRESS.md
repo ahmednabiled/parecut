@@ -76,7 +76,7 @@ Complete:
 - Real transcription: WhisperX `large-v3-turbo` with word alignment
 - Real diarization: NVIDIA Nemotron-3-Diarization in an isolated Python venv
 - Speaker-attributed transcript fed into the before/after renderers and `ROUGH-CUT.md`
-- Endpoint release #16 pinned to `ghcr.io/ahmednabiled/parecut-worker:sha-f710ec2`
+- Endpoint release #17 pinned to `ghcr.io/ahmednabiled/parecut-worker:sha-2e0ec75`
 - R2 browser uploads proxied through FastAPI, with worker artifact uploads still using
   direct presigned R2 URLs; text artifacts served same-origin for previews and copy
 - Deterministic cut rules for restart false starts and same-speaker retakes; the
@@ -86,7 +86,11 @@ Complete:
   labels; mock/demo jobs still get `Demo —` labels
 - Real enhancement with Resemble Enhance: the worker denoises with DeepFilterNet3,
   restores and extends the voice at 44.1 kHz, blends it with the denoised input using
-  `enhance_mix`, and labels the track `Enhanced Audio (Resemble Enhance)`
+  `enhance_mix`, and labels the track `Studio Enhanced Audio (Resemble Enhance)`
+- Configurable studio finishing chain after Resemble: high-pass, body/mud/presence EQ,
+  de-esser, compressor, limiter, and EBU R128 loudness normalization. The controls live
+  in a collapsible Studio polish panel that is collapsed by default; settings are stored
+  on each enhance run.
 
 Pending:
 
@@ -179,7 +183,7 @@ Worker image:
   `ghcr.io/ahmednabiled/parecut-worker:sha-<short>`.
 - The repository is private, so Runpod uses the `ghcr-parecut` registry credential with a
   GitHub PAT scoped to `read:packages`.
-- Endpoint release #16 runs `ghcr.io/ahmednabiled/parecut-worker:sha-f710ec2`.
+- Endpoint release #17 runs `ghcr.io/ahmednabiled/parecut-worker:sha-2e0ec75`.
 - The private pull was verified end to end: a fresh worker pulled the private image,
   processed jobs, and uploaded artifacts to R2.
 - The image bakes DeepFilterNet3, Resemble Enhance, WhisperX `large-v3-turbo`, the
@@ -210,6 +214,9 @@ Current worker:
   DeepFilterNet3 denoises first, then Resemble re-synthesizes the voice at 44.1 kHz;
   the result is resampled to 48 kHz and blended with the denoised input using
   `enhance_mix` (default 0.8). CPU inference uses 32 CFM steps.
+- Studio polish: when the studio chain is enabled, the worker runs ffmpeg high-pass,
+  three EQ bands, de-esser, compressor, limiter, and loudness normalization. The
+  settings are stored per effect run and default to the current studio preset.
 - The image uses Python 3.11 because `deepfilterlib` has no Python 3.12 wheel.
   It installs `ffmpeg`, `git`, `libsndfile1`, CPU torch/torchaudio 2.2.2, `soundfile`,
   `whisperx==3.3.1`, `pyannote.audio==3.3.2` (WhisperX VAD), `demucs==4.1.0`, and
@@ -406,6 +413,21 @@ Enhance effect with mix 0.8 on the 55.7s clip:
 
 The demo job keeps the real denoise and Resemble tracks only; the older placeholder
 enhance runs were removed.
+
+On 2026-11-12, release #17 (`sha-2e0ec75`) added the configurable studio chain. A
+default studio run on the same 55.7s clip:
+
+- Used the default controls: 75 Hz high-pass, +2 dB body, −2 dB mud, +1.5 dB presence,
+  35% de-essing, 2.5:1 compression, −1 dB limiter, and −16 LUFS target.
+- Completed in about 107 seconds from worker start on CPU.
+- Produced `Studio Enhanced Audio (Resemble Enhance)`; the stored
+  `pipeline_config.studio_chain` matches the UI payload.
+- Measured −16.5 LUFS integrated and −1.5 dBFS peak after the chain.
+- The Studio polish panel is collapsed by default in the inspector and expands to eleven
+  sliders; the chain can be disabled without leaving the panel.
+
+The demo job now keeps the noise-reduction and studio-enhanced tracks only. The
+intermediate Resemble-only and test runs were removed; the demo balance is 118 minutes.
 
 Production serving was verified on the FastAPI process: `GET /` returns the built SPA,
 `GET /jobs/abc` returns the SPA for deep links, `/brand/login-logo.png` returns the
