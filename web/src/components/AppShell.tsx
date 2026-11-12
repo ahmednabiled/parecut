@@ -50,6 +50,24 @@ export default function AppShell() {
     return () => media.removeEventListener("change", handleChange);
   }, []);
 
+  useEffect(() => {
+    if (!editor) return;
+    const media = window.matchMedia("(min-width: 1280px)");
+    const apply = () => {
+      document.documentElement.style.overflow = media.matches
+        ? "hidden"
+        : "";
+      document.body.style.overflow = media.matches ? "hidden" : "";
+    };
+    apply();
+    media.addEventListener("change", apply);
+    return () => {
+      media.removeEventListener("change", apply);
+      document.documentElement.style.overflow = "";
+      document.body.style.overflow = "";
+    };
+  }, [editor]);
+
   function closeOnMobile() {
     if (window.innerWidth < 1024) setSidebarOpen(false);
   }
