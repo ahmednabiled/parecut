@@ -51,6 +51,7 @@ RESEMBLE_RUN_DIR = Path(
 _MODEL = None
 _STATE = None
 _WHISPER_MODEL = None
+_RAW_WHISPER_MODEL = None
 _ALIGN_MODELS: dict[str, tuple[Any, Any]] = {}
 _DEMUCS_MODEL = None
 
@@ -318,6 +319,23 @@ def _get_whisper_model():
     return _WHISPER_MODEL
 
 
+def _get_raw_whisper_model():
+    global _RAW_WHISPER_MODEL
+    if _RAW_WHISPER_MODEL is None:
+        from faster_whisper import WhisperModel
+
+        logger.info("loading faster-whisper word-timestamp model")
+        _RAW_WHISPER_MODEL = WhisperModel(
+            "large-v3-turbo",
+            device="cpu",
+            compute_type="int8",
+            download_root="/root/.cache/whisperx",
+            local_files_only=True,
+        )
+        logger.info("faster-whisper word-timestamp model ready")
+    return _RAW_WHISPER_MODEL
+
+
 def _get_align_model(language: str) -> tuple[Any, Any]:
     if language not in _ALIGN_MODELS:
         import whisperx
@@ -401,9 +419,79 @@ def _segment_confidence(
     return alignment_score if alignment_score is not None else 0.5
 
 
+def _raw_segment_confidence(segment) -> float:
+    base = _confidence_from_logprob(getattr(segment, "avg_logprob", None))
+    probabilities = [
+        float(word.probability)
+        for word in (getattr(segment, "words", None) or [])
+        if getattr(word, "probability", None) is not None
+    ]
+    if not probabilities:
+        return base
+    return 0.6 * base + 0.4 * max(
+        0.0, min(1.0, sum(probabilities) / len(probabilities))
+    )
+
+
+def _transcribe_raw(
+    wav_path: Path, language: str
+) -> list[LanguageSegment]:
+    import whisperx
+
+    model = _get_raw_whisper_model()
+    audio = whisperx.load_audio(str(wav_path))
+    segments, _info = model.transcribe(
+        audio,
+        language=language,
+        beam_size=5,
+        condition_on_previous_text=False,
+        word_timestamps=True,
+        vad_filter=True,
+    )
+
+    candidates: list[LanguageSegment] = []
+    for segment in segments:
+        text = str(segment.text).strip()
+        words = [
+            (
+                float(word.start),
+                float(word.end),
+                str(word.word).strip(),
+            )
+            for word in (getattr(segment, "words", None) or [])
+            if word.start is not None
+            and word.end is not None
+            and str(word.word).strip()
+        ]
+        if not words and text:
+            words = [(float(segment.start), float(segment.end), text)]
+        if not words:
+            continue
+        candidates.append(
+            LanguageSegment(
+                language=language,
+                start=float(segment.start),
+                end=float(segment.end),
+                text=text or " ".join(word[2] for word in words),
+                confidence=_raw_segment_confidence(segment),
+                words=words,
+            )
+        )
+    return candidates
+
+
 def _transcribe_language(
     wav_path: Path, language: str
 ) -> list[LanguageSegment]:
+    if language == "ar":
+        try:
+            return _transcribe_raw(wav_path, language)
+        except Exception:
+            logger.exception(
+                "raw Arabic word-timestamp transcription failed; "
+                "using WhisperX segment timestamps"
+            )
+
     import whisperx
 
     model = _get_whisper_model()
@@ -412,21 +500,22 @@ def _transcribe_language(
     segments = result.get("segments", [])
     aligned_segments = segments
 
-    try:
-        align_model, metadata = _get_align_model(language)
-        aligned = whisperx.align(
-            segments,
-            align_model,
-            metadata,
-            audio,
-            device="cpu",
-            return_char_alignments=False,
-        )
-        aligned_segments = aligned.get("segments", segments)
-    except Exception:
-        logger.exception(
-            "alignment failed for %s; using segment timestamps", language
-        )
+    if language != "ar":
+        try:
+            align_model, metadata = _get_align_model(language)
+            aligned = whisperx.align(
+                segments,
+                align_model,
+                metadata,
+                audio,
+                device="cpu",
+                return_char_alignments=False,
+            )
+            aligned_segments = aligned.get("segments", segments)
+        except Exception:
+            logger.exception(
+                "alignment failed for %s; using segment timestamps", language
+            )
 
     candidates: list[LanguageSegment] = []
     for index, segment in enumerate(aligned_segments):

@@ -123,8 +123,7 @@ RUN python -c "import ctranslate2, whisperx; print('ctranslate2', ctranslate2.__
 RUN python - <<'PY'
 import whisperx
 
-for language in ("en", "ar"):
-    whisperx.load_align_model(language_code=language, device="cpu")
+whisperx.load_align_model(language_code="en", device="cpu")
 PY
 
 # Nemotron-3-Diarization needs torch 2.6+/transformers 5.x. Keep it in a
