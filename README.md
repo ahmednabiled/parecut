@@ -32,6 +32,8 @@ Implemented:
 - real noise reduction with DeepFilterNet3
 - real music/dialogue separation with Demucs `htdemucs_ft`
 - real transcription with WhisperX 3.3.1 `large-v3-turbo` and English word alignment
+- mixed-language transcription: choose English/Arabic per run, transcribe once per
+  selected language, then merge by script and confidence before speaker assignment
 - real enhancement with Resemble Enhance: 44.1 kHz restoration, bandwidth and body
   extension, a wet/dry mix, and CPU inference
 - a configurable studio finishing chain after Resemble: high-pass, body/mud/presence EQ,
@@ -60,8 +62,9 @@ Still pending:
 - GPU inference; Resemble Enhance, transcription, and separation currently run on CPU
   torch and are slower than they need to be
 - true target-speaker separation; per-speaker stems are gated from diarization turns
-- language selection/forced language for mixed-language recordings, with matching
-  alignment models
+- per-segment language identification or a code-switch-aware ASR model; the current
+  mixed-language path runs one pass per selected language and merges the results
+- language selection/forced language for additional languages beyond English/Arabic
 - LLM take selection
 - Redis, Stripe billing, OAuth, and retention
 
@@ -81,6 +84,10 @@ The Enhance effect runs DeepFilterNet3 and Resemble Enhance. Its Studio polish p
 collapsed by default; expanding it exposes high-pass, body/mud/presence EQ, de-essing,
 compression, limiting, and loudness controls. The panel can be switched off, and the
 values are stored on the effect run so the worker applies exactly what was set.
+
+The Transcribe effect has a language picker. Select every language present in the
+recording; selecting more than one runs the model once per language and merges the
+segments by script and confidence before the cut plan is built.
 
 Source and effect audio stream same-origin with HTTP range support, so the browser can
 seek and keep tracks synchronized. Playback and per-track mute use the Web Audio API;

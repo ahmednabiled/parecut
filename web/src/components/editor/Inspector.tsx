@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useId, useEffect, useState } from "react";
 import type {
   EffectName,
   Job,
@@ -520,6 +520,14 @@ export default function Inspector({
       return [...current, language];
     });
   }
+
+  const lastTranscribe = latestRun(effects, "transcribe");
+  useEffect(() => {
+    const next = lastTranscribe?.pipeline_config.transcription_languages;
+    if (next && next.length > 0) {
+      setLanguages(next);
+    }
+  }, [lastTranscribe?.id]);
 
   const srt = transcriptJob?.artifacts.find(
     (artifact) =>

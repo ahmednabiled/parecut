@@ -82,9 +82,12 @@ Complete:
 - Real separation: `stem_music` and `stem_dialogue` come from Demucs `htdemucs_ft`;
   per-speaker stems are gated from the diarization turns
 - Real transcription: WhisperX `large-v3-turbo` with word alignment
+- Mixed-language transcription: selectable English/Arabic; one pass per language,
+  script filtering, confidence-based overlap selection, then speaker assignment and the
+  cut plan
 - Real diarization: NVIDIA Nemotron-3-Diarization in an isolated Python venv
 - Speaker-attributed transcript fed into the before/after renderers and `ROUGH-CUT.md`
-- Endpoint release #17 pinned to `ghcr.io/ahmednabiled/parecut-worker:sha-2e0ec75`
+- Endpoint release #18 pinned to `ghcr.io/ahmednabiled/parecut-worker:sha-49aba40`
 - R2 browser uploads proxied through FastAPI, with worker artifact uploads still using
   direct presigned R2 URLs; text artifacts served same-origin for previews and copy
 - Deterministic cut rules for restart false starts and same-speaker retakes; the
@@ -104,6 +107,9 @@ Pending:
 
 - GPU inference for Resemble Enhance, transcription, separation, and diarization; the
   current worker runs CPU torch
+- Per-segment language identification or a code-switch-aware model; the current
+  two-pass merge can still pick one language inside a single mixed-language segment
+- Additional languages beyond English/Arabic
 - True target-speaker separation; per-speaker stems are currently gated by diarization
   turns, and MossFormer2-SS remains optional
 - LLM take selection on top of the deterministic false-start/retake rules
@@ -191,7 +197,7 @@ Worker image:
   `ghcr.io/ahmednabiled/parecut-worker:sha-<short>`.
 - The repository is private, so Runpod uses the `ghcr-parecut` registry credential with a
   GitHub PAT scoped to `read:packages`.
-- Endpoint release #17 runs `ghcr.io/ahmednabiled/parecut-worker:sha-2e0ec75`.
+- Endpoint release #18 runs `ghcr.io/ahmednabiled/parecut-worker:sha-49aba40`.
 - The private pull was verified end to end: a fresh worker pulled the private image,
   processed jobs, and uploaded artifacts to R2.
 - The image bakes DeepFilterNet3, Resemble Enhance, WhisperX `large-v3-turbo`, the
@@ -211,7 +217,10 @@ Current worker:
 - Separation: Demucs `htdemucs_ft` produces `stem_music` and `stem_dialogue`.
   Per-speaker stems are gated from the diarization turns, up to eight speakers.
 - Transcription: WhisperX 3.3.1 `large-v3-turbo` with the English alignment model.
-  Aligned words are assigned to speakers and merged into readable segments.
+  Aligned words are assigned to speakers and merged into readable segments. For mixed
+  English/Arabic, the worker runs one pass per selected language; English uses WhisperX
+  alignment, Arabic uses faster-whisper word timestamps, and the candidates are filtered
+  by script and merged by confidence before diarization.
 - Diarization: NVIDIA Nemotron-3-Diarization via `/opt/nemotron/diarize.py`. If the
   model fails, the worker logs the error and falls back to one speaker instead of
   failing the whole job.
@@ -434,8 +443,26 @@ default studio run on the same 55.7s clip:
 - The Studio polish panel is collapsed by default in the inspector and expands to eleven
   sliders; the chain can be disabled without leaving the panel.
 
-The demo job now keeps the noise-reduction and studio-enhanced tracks only. The
-intermediate Resemble-only and test runs were removed; the demo balance is 118 minutes.
+The demo job keeps the noise-reduction and studio-enhanced tracks; the intermediate
+Resemble-only and placeholder runs were removed.
+
+On 2026-11-12, release #18 (`sha-49aba40`) added selectable mixed-language
+transcription. A Transcribe run on the demo clip with English and Arabic selected:
+
+- Completed in about 48 seconds on CPU.
+- Produced 37 before-cut segments: English through roughly 15 seconds, then Arabic
+  through the end, with the expected code-switching words such as “In Qatar”.
+- The before-cut SRT contains Arabic lines such as `ما الذي ستكون حصلًا؟` and
+  `أين ذهبت؟ قطر قطر`; the after-cut SRT and `ROUGH-CUT.md` include the merged content.
+- The viewer and speaker-role editor use that transcription run, and the language
+  picker reopens with English + Arabic selected.
+- The worker image does not bake the 1.2 GB Arabic alignment model; Arabic uses
+  faster-whisper word timestamps from the already-baked model, with a segment-timestamp
+  fallback. English keeps the WhisperX alignment model.
+
+The remaining limitation is language changes inside a single speech segment: the merge
+picks the stronger candidate for that segment, so a future per-segment LID or
+code-switch-aware ASR model would improve those cases.
 
 Production serving was verified on the FastAPI process: `GET /` returns the built SPA,
 `GET /jobs/abc` returns the SPA for deep links, `/brand/login-logo.png` returns the
@@ -495,11 +522,11 @@ The progress file itself adds one more documentation commit after these.
 
 1. Audition the Resemble-enhanced demo track and tune the wet mix or add a light
    presence/compression finishing chain only if it is needed. The Resemble worker is
-   live as release #16.
+   live as release #18.
 2. Replace the gated per-speaker stems with true target-speaker extraction
    (MossFormer2-SS) if the product needs overlapping-speech separation.
-3. Add a language selector/forced language for mixed-language recordings and bake the
-   matching alignment models.
+3. Add per-segment language identification or a code-switch-aware ASR model and support
+   languages beyond English/Arabic.
 4. Add LLM take selection on top of the deterministic rule pass. The current rules
    remove silence, feeder lines, restart false starts, and same-speaker retakes.
 5. Create `parecut-separate`; publish a new `sha-<short>` worker release for each change.
