@@ -10,9 +10,12 @@ from parecut_engine.schemas import (
     TranscriptSegment,
 )
 from runpod_app.worker import (
+    LanguageSegment,
     SpeakerTurn,
+    _merge_language_segments,
     _studio_filter_chain,
     handler,
+    transcribe_languages,
 )
 from tests.helpers import make_wav
 
@@ -69,7 +72,7 @@ def fake_polisher(
     output_path.write_bytes(input_path.read_bytes())
 
 
-def fake_transcriber(wav_path: Path) -> Transcript:
+def fake_transcriber(wav_path: Path, language: str) -> Transcript:
     return Transcript(
         speakers=["SPEAKER_01"],
         segments=[
@@ -388,3 +391,146 @@ def test_studio_filter_chain_matches_controls():
     assert "attack=12.00:release=180.00" in filters
     assert "alimiter=limit=0.84140" in filters
     assert "loudnorm=I=-14.00" in filters
+
+
+def test_transcribe_languages_merges_english_and_arabic():
+    def mixed_transcriber(wav_path: Path, language: str) -> Transcript:
+        if language == "ar":
+            return Transcript(
+                speakers=["SPEAKER_01"],
+                segments=[
+                    TranscriptSegment(
+                        speaker="SPEAKER_01",
+                        start=1.0,
+                        end=1.6,
+                        text="هذا اختبار عربي.",
+                    ),
+                    TranscriptSegment(
+                        speaker="SPEAKER_01",
+                        start=1.8,
+                        end=2.2,
+                        text="مرحبا بالعالم.",
+                    ),
+                ],
+            )
+        return Transcript(
+            speakers=["SPEAKER_01"],
+            segments=[
+                TranscriptSegment(
+                    speaker="SPEAKER_01",
+                    start=0.2,
+                    end=0.8,
+                    text="Hello from the presenter.",
+                ),
+                TranscriptSegment(
+                    speaker="SPEAKER_01",
+                    start=2.4,
+                    end=2.9,
+                    text="Back in English.",
+                ),
+            ],
+        )
+
+    transcript = transcribe_languages(
+        Path("clip.wav"),
+        ["en", "ar"],
+        transcriber=mixed_transcriber,
+    )
+    text = " ".join(segment.text for segment in transcript.segments)
+    assert "Hello from the presenter." in text
+    assert "هذا اختبار عربي." in text
+    assert "مرحبا بالعالم." in text
+    assert "Back in English." in text
+    assert [segment.start for segment in transcript.segments] == sorted(
+        segment.start for segment in transcript.segments
+    )
+
+
+def test_merge_language_segments_filters_wrong_script_and_prefers_confidence():
+    candidates = [
+        LanguageSegment(
+            language="en",
+            start=0.0,
+            end=2.0,
+            text="Hello there",
+            confidence=0.8,
+            words=[(0.0, 1.0, "Hello")],
+        ),
+        LanguageSegment(
+            language="ar",
+            start=0.0,
+            end=2.0,
+            text="مرحبا بكم",
+            confidence=0.9,
+            words=[(0.0, 2.0, "مرحبا")],
+        ),
+        LanguageSegment(
+            language="en",
+            start=3.0,
+            end=4.0,
+            text="مرحبا",
+            confidence=0.99,
+            words=[(3.0, 4.0, "مرحبا")],
+        ),
+    ]
+    selected = _merge_language_segments(candidates)
+    assert [segment.language for segment in selected] == ["ar"]
+    assert selected[0].text == "مرحبا بكم"
+
+
+def test_worker_transcribes_selected_languages_into_before_json():
+    config = PipelineConfig(
+        noise_reduction=False,
+        enhance=False,
+        separate_music=False,
+        separate_speakers=False,
+        transcribe=True,
+        rough_cut=True,
+        transcription_languages=["en", "ar"],
+    )
+    job = make_job(config)
+    client = FakeClient()
+
+    def mixed_transcriber(wav_path: Path, language: str) -> Transcript:
+        if language == "ar":
+            return Transcript(
+                speakers=["SPEAKER_01"],
+                segments=[
+                    TranscriptSegment(
+                        speaker="SPEAKER_01",
+                        start=1.0,
+                        end=1.6,
+                        text="مرحبا بالعالم.",
+                    )
+                ],
+            )
+        return Transcript(
+            speakers=["SPEAKER_01"],
+            segments=[
+                TranscriptSegment(
+                    speaker="SPEAKER_01",
+                    start=0.2,
+                    end=0.8,
+                    text="Hello from the presenter.",
+                )
+            ],
+        )
+
+    result = handler(
+        job,
+        client=client,
+        transcriber=mixed_transcriber,
+        diarizer=fake_diarizer,
+    )
+    uploaded = _uploaded(client, job)
+    before_json = uploaded[
+        next(
+            artifact["key"]
+            for artifact in job["input"]["expected_artifacts"]
+            if artifact["kind"] == "transcript_before"
+            and artifact["format"] == "json"
+        )
+    ].decode()
+    assert "Hello from the presenter." in before_json
+    assert "مرحبا بالعالم." in before_json
+    assert result["stages"]["transcribe"]["status"] == "completed"

@@ -1,10 +1,17 @@
 import { useId, useState } from "react";
-import type { EffectName, Job, StudioChain } from "../../api/types";
+import type {
+  EffectName,
+  Job,
+  StudioChain,
+  TranscriptionLanguage,
+} from "../../api/types";
 import {
+  DEFAULT_LANGUAGES,
   DEFAULT_STUDIO,
   EFFECTS,
   latestRun,
   RUNNING_STATUSES,
+  TRANSCRIPTION_LANGUAGES,
   type EffectDefinition,
 } from "../../lib/effects";
 import Icon from "../Icon";
@@ -22,6 +29,7 @@ interface InspectorProps {
     effect: EffectName,
     enhanceMix?: number,
     studio?: StudioChain,
+    languages?: TranscriptionLanguage[],
   ) => void;
   error: string | null;
   shortfall: Shortfall | null;
@@ -30,6 +38,7 @@ interface InspectorProps {
   onSpeakerUpdated: () => void;
   defaultMix: number;
   defaultStudio: StudioChain;
+  defaultLanguages: TranscriptionLanguage[];
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -307,6 +316,49 @@ function StudioPanel({
   );
 }
 
+function LanguagePicker({
+  languages,
+  onToggle,
+}: {
+  languages: TranscriptionLanguage[];
+  onToggle: (language: TranscriptionLanguage) => void;
+}) {
+  return (
+    <div className="mt-4">
+      <p className="text-[12px] font-medium text-on-surface">
+        Languages in the soundtrack
+      </p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {TRANSCRIPTION_LANGUAGES.map(({ code, label }) => {
+          const active = languages.includes(code);
+          return (
+            <label
+              key={code}
+              className={`inline-flex h-7 cursor-pointer items-center rounded-full px-3 text-[11px] font-medium transition-colors duration-150 ease-standard focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-on-surface ${
+                active
+                  ? "bg-primary text-on-primary"
+                  : "border border-outline text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={active}
+                onChange={() => onToggle(code)}
+                className="sr-only"
+              />
+              {label}
+            </label>
+          );
+        })}
+      </div>
+      <p className="mt-2 text-[11px] leading-4 text-on-surface-variant">
+        Select every language present. Multiple languages run the model once per
+        language and merge the results, so processing takes longer.
+      </p>
+    </div>
+  );
+}
+
 function EffectRow({
   definition,
   run,
@@ -318,6 +370,8 @@ function EffectRow({
   onStudio,
   studioOpen,
   onStudioOpen,
+  languages,
+  onLanguages,
   onApply,
 }: {
   definition: EffectDefinition;
@@ -330,10 +384,17 @@ function EffectRow({
   onStudio: (studio: StudioChain) => void;
   studioOpen: boolean;
   onStudioOpen: () => void;
-  onApply: (enhanceMix?: number, studio?: StudioChain) => void;
+  languages: TranscriptionLanguage[];
+  onLanguages: (language: TranscriptionLanguage) => void;
+  onApply: (
+    enhanceMix?: number,
+    studio?: StudioChain,
+    languages?: TranscriptionLanguage[],
+  ) => void;
 }) {
   const running = run !== null && RUNNING_STATUSES.has(run.status);
   const isEnhance = definition.name === "enhance";
+  const isTranscribe = definition.name === "transcribe";
 
   return (
     <article className="border-t border-outline-variant py-5 first:border-t-0 first:pt-0">
@@ -375,6 +436,10 @@ function EffectRow({
         </div>
       ) : null}
 
+      {isTranscribe ? (
+        <LanguagePicker languages={languages} onToggle={onLanguages} />
+      ) : null}
+
       <button
         type="button"
         disabled={disabled}
@@ -382,6 +447,7 @@ function EffectRow({
           onApply(
             isEnhance ? mix / 100 : undefined,
             isEnhance ? studio : undefined,
+            isTranscribe ? languages : undefined,
           )
         }
         className="mt-4 inline-flex h-8 items-center gap-2 rounded-[16px] border border-outline px-3 text-[12px] font-medium text-on-surface transition-colors duration-150 ease-standard hover:bg-surface-container-high disabled:cursor-not-allowed disabled:opacity-50"
@@ -427,6 +493,7 @@ export default function Inspector({
   onSpeakerUpdated,
   defaultMix,
   defaultStudio,
+  defaultLanguages,
 }: InspectorProps) {
   const [mix, setMix] = useState(() =>
     Math.max(0, Math.min(100, Math.round(defaultMix * 100))),
@@ -436,6 +503,23 @@ export default function Inspector({
     ...defaultStudio,
   }));
   const [studioOpen, setStudioOpen] = useState(false);
+  const [languages, setLanguages] = useState<TranscriptionLanguage[]>(() => {
+    const initial = (defaultLanguages ?? DEFAULT_LANGUAGES).filter(
+      (language) => language === "en" || language === "ar",
+    );
+    return initial.length > 0 ? initial : DEFAULT_LANGUAGES;
+  });
+
+  function toggleLanguage(language: TranscriptionLanguage) {
+    setLanguages((current) => {
+      if (current.includes(language)) {
+        return current.length === 1
+          ? current
+          : current.filter((item) => item !== language);
+      }
+      return [...current, language];
+    });
+  }
 
   const srt = transcriptJob?.artifacts.find(
     (artifact) =>
@@ -498,8 +582,15 @@ export default function Inspector({
                 onStudio={setStudio}
                 studioOpen={studioOpen}
                 onStudioOpen={() => setStudioOpen((open) => !open)}
-                onApply={(enhanceMix, studioSettings) =>
-                  onApply(definition.name, enhanceMix, studioSettings)
+                languages={languages}
+                onLanguages={toggleLanguage}
+                onApply={(enhanceMix, studioSettings, languageSettings) =>
+                  onApply(
+                    definition.name,
+                    enhanceMix,
+                    studioSettings,
+                    languageSettings,
+                  )
                 }
               />
             );

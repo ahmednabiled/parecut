@@ -1,9 +1,10 @@
 from datetime import datetime, timezone
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 SpeakerRole = Literal["presenter", "feeder", "cohost"]
+TranscriptionLanguage = Literal["en", "ar"]
 StageName = Literal[
     "noise_reduction",
     "enhance",
@@ -38,6 +39,18 @@ class PipelineConfig(BaseModel):
     separate_speakers: bool = True
     transcribe: bool = True
     rough_cut: bool = True
+    transcription_languages: list[TranscriptionLanguage] = Field(
+        default_factory=lambda: ["en"]
+    )
+
+    @field_validator("transcription_languages")
+    @classmethod
+    def _at_least_one_language(
+        cls, value: list[TranscriptionLanguage]
+    ) -> list[TranscriptionLanguage]:
+        if not value:
+            raise ValueError("select at least one transcription language")
+        return list(dict.fromkeys(value))
 
     @model_validator(mode="after")
     def _rough_cut_requires_transcribe(self) -> "PipelineConfig":

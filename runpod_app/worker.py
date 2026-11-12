@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 import os
 import subprocess
 import tempfile
@@ -34,7 +35,7 @@ MIME_TYPES = {
 Denoiser = Callable[[Path, Path], None]
 Enhancer = Callable[[Path, Path, float], None]
 StudioPolisher = Callable[[Path, Path, StudioChain], None]
-Transcriber = Callable[[Path], Transcript]
+Transcriber = Callable[[Path, str], Transcript]
 Diarizer = Callable[[Path], list["SpeakerTurn"]]
 Separator = Callable[[Path, Path], tuple[bytes, bytes]]
 
@@ -59,6 +60,16 @@ class SpeakerTurn:
     speaker: str
     start: float
     end: float
+
+
+@dataclass
+class LanguageSegment:
+    language: str
+    start: float
+    end: float
+    text: str
+    confidence: float
+    words: list[tuple[float, float, str]]
 
 
 def _progress(job: dict, stage: str, percent: int) -> None:
@@ -320,21 +331,87 @@ def _get_align_model(language: str) -> tuple[Any, Any]:
     return _ALIGN_MODELS[language]
 
 
-def transcribe_audio(
-    wav_path: Path, *, transcriber: Transcriber | None = None
-) -> Transcript:
-    if transcriber is not None:
-        return transcriber(wav_path)
+def _script_ratio(text: str, language: str) -> float:
+    letters = [char for char in text if char.isalpha()]
+    if not letters:
+        return 1.0
+    if language == "ar":
+        matching = sum(
+            1
+            for char in letters
+            if "\u0600" <= char <= "\u06ff"
+            or "\ufb50" <= char <= "\ufdff"
+            or "\ufe70" <= char <= "\ufeff"
+        )
+    else:
+        matching = sum(1 for char in letters if char.isascii())
+    return matching / len(letters)
 
+
+def _confidence_from_logprob(value: float | None) -> float:
+    if value is None:
+        return 0.5
+    return math.exp(min(0.0, max(-5.0, value)))
+
+
+def _segment_words(
+    segment: dict, source: dict
+) -> list[tuple[float, float, str]]:
+    words: list[tuple[float, float, str]] = []
+    for word in segment.get("words", []):
+        start = word.get("start")
+        end = word.get("end")
+        text = str(word.get("word", "")).strip()
+        if start is None or end is None or not text:
+            continue
+        words.append((float(start), float(end), text))
+    if words:
+        return words
+
+    text = str(source.get("text", "")).strip()
+    if not text:
+        return []
+    try:
+        start = float(segment.get("start", source.get("start")))
+        end = float(segment.get("end", source.get("end")))
+    except (TypeError, ValueError):
+        return []
+    return [(start, end, text)]
+
+
+def _segment_confidence(
+    segment: dict,
+    source: dict,
+    words: list[tuple[float, float, str]],
+) -> float:
+    scores = [
+        float(word["score"])
+        for word in segment.get("words", [])
+        if isinstance(word.get("score"), (int, float))
+    ]
+    alignment_score = (
+        max(0.0, min(1.0, sum(scores) / len(scores))) if scores else None
+    )
+    avg = source.get("avg_logprob", segment.get("avg_logprob"))
+    if isinstance(avg, (int, float)):
+        base = _confidence_from_logprob(float(avg))
+        if alignment_score is None:
+            return base
+        return 0.6 * base + 0.4 * alignment_score
+    return alignment_score if alignment_score is not None else 0.5
+
+
+def _transcribe_language(
+    wav_path: Path, language: str
+) -> list[LanguageSegment]:
     import whisperx
 
     model = _get_whisper_model()
     audio = whisperx.load_audio(str(wav_path))
-    result = model.transcribe(audio, batch_size=8)
+    result = model.transcribe(audio, batch_size=8, language=language)
     segments = result.get("segments", [])
-    language = str(result.get("language") or "en")
+    aligned_segments = segments
 
-    words: list[TranscriptSegment] = []
     try:
         align_model, metadata = _get_align_model(language)
         aligned = whisperx.align(
@@ -345,40 +422,118 @@ def transcribe_audio(
             device="cpu",
             return_char_alignments=False,
         )
-        for segment in aligned.get("segments", []):
-            for word in segment.get("words", []):
-                start = word.get("start")
-                end = word.get("end")
-                text = str(word.get("word", "")).strip()
-                if start is None or end is None or not text:
-                    continue
-                words.append(
-                    TranscriptSegment(
-                        speaker="SPEAKER_01",
-                        start=float(start),
-                        end=float(end),
-                        text=text,
-                    )
-                )
+        aligned_segments = aligned.get("segments", segments)
     except Exception:
-        logger.exception("alignment failed; using segment timestamps")
+        logger.exception(
+            "alignment failed for %s; using segment timestamps", language
+        )
 
-    if words:
-        return Transcript(speakers=["SPEAKER_01"], segments=words)
+    candidates: list[LanguageSegment] = []
+    for index, segment in enumerate(aligned_segments):
+        source = segments[index] if index < len(segments) else segment
+        words = _segment_words(segment, source)
+        if not words:
+            continue
+        candidates.append(
+            LanguageSegment(
+                language=language,
+                start=float(segment.get("start", words[0][0])),
+                end=float(segment.get("end", words[-1][1])),
+                text=" ".join(word[2] for word in words).strip(),
+                confidence=_segment_confidence(segment, source, words),
+                words=words,
+            )
+        )
+    return candidates
 
-    fallback = [
+
+def _transcriber_language_segments(
+    transcript: Transcript, language: str
+) -> list[LanguageSegment]:
+    return [
+        LanguageSegment(
+            language=language,
+            start=segment.start,
+            end=segment.end,
+            text=segment.text.strip(),
+            confidence=0.75,
+            words=[(segment.start, segment.end, segment.text.strip())],
+        )
+        for segment in transcript.segments
+        if segment.text.strip()
+    ]
+
+
+def _overlapping(a: LanguageSegment, b: LanguageSegment) -> bool:
+    overlap = max(0.0, min(a.end, b.end) - max(a.start, b.start))
+    shorter = min(max(0.01, a.end - a.start), max(0.01, b.end - b.start))
+    return overlap > 0.35 and overlap > 0.3 * shorter
+
+
+def _merge_language_segments(
+    candidates: list[LanguageSegment],
+) -> list[LanguageSegment]:
+    scored: list[tuple[float, LanguageSegment]] = []
+    for candidate in candidates:
+        text = candidate.text.strip()
+        if not text:
+            continue
+        ratio = _script_ratio(text, candidate.language)
+        if any(char.isalpha() for char in text) and ratio < 0.2:
+            continue
+        scored.append((candidate.confidence + 2.0 * ratio, candidate))
+
+    scored.sort(key=lambda item: item[0], reverse=True)
+    selected: list[LanguageSegment] = []
+    for _score, candidate in scored:
+        if any(_overlapping(candidate, other) for other in selected):
+            continue
+        selected.append(candidate)
+    selected.sort(key=lambda item: item.start)
+    return selected
+
+
+def transcribe_languages(
+    wav_path: Path,
+    languages: list[str] | None = None,
+    *,
+    transcriber: Transcriber | None = None,
+) -> Transcript:
+    selected = list(dict.fromkeys(languages or ["en"]))
+    candidates: list[LanguageSegment] = []
+    for language in selected:
+        if transcriber is not None:
+            candidates.extend(
+                _transcriber_language_segments(
+                    transcriber(wav_path, language), language
+                )
+            )
+        else:
+            candidates.extend(_transcribe_language(wav_path, language))
+
+    if not candidates:
+        return Transcript(speakers=[], segments=[])
+
+    kept = (
+        candidates
+        if len(selected) == 1
+        else _merge_language_segments(candidates)
+    )
+    words = [
         TranscriptSegment(
             speaker="SPEAKER_01",
-            start=float(segment["start"]),
-            end=float(segment["end"]),
-            text=str(segment.get("text", "")).strip(),
+            start=start,
+            end=end,
+            text=text,
         )
-        for segment in segments
-        if str(segment.get("text", "")).strip()
+        for candidate in kept
+        for start, end, text in candidate.words
+        if text
     ]
+    words.sort(key=lambda word: word.start)
     return Transcript(
-        speakers=["SPEAKER_01"] if fallback else [],
-        segments=fallback,
+        speakers=["SPEAKER_01"] if words else [],
+        segments=words,
     )
 
 
@@ -680,7 +835,11 @@ def handler(
 
         transcript = Transcript(speakers=[], segments=[])
         if config.transcribe:
-            transcript = transcribe_audio(working_wav, transcriber=transcriber)
+            transcript = transcribe_languages(
+                working_wav,
+                config.transcription_languages,
+                transcriber=transcriber,
+            )
             transcript = assign_speakers(transcript, turns)
             transcript = merge_words(transcript)
 

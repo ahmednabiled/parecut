@@ -2,7 +2,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError, apiFetch } from "../api/client";
-import type { Artifact, EffectName, Job, StudioChain } from "../api/types";
+import type {
+  Artifact,
+  EffectName,
+  Job,
+  StudioChain,
+  TranscriptionLanguage,
+} from "../api/types";
 import Inspector from "../components/editor/Inspector";
 import Timeline from "../components/editor/Timeline";
 import type { EditorTrack } from "../components/editor/types";
@@ -19,6 +25,7 @@ import {
 } from "../lib/captions";
 import {
   AUDIO_KINDS,
+  DEFAULT_LANGUAGES,
   DEFAULT_STUDIO,
   effectLabel,
   RUNNING_STATUSES,
@@ -262,6 +269,7 @@ export default function JobEditor() {
       effect: EffectName;
       enhanceMix?: number;
       studio?: StudioChain;
+      languages?: TranscriptionLanguage[];
     }) => {
       const payload: Record<string, unknown> = { effect: variables.effect };
       if (variables.enhanceMix !== undefined) {
@@ -269,6 +277,9 @@ export default function JobEditor() {
       }
       if (variables.studio !== undefined) {
         payload.studio = variables.studio;
+      }
+      if (variables.languages !== undefined) {
+        payload.languages = variables.languages;
       }
       return apiFetch<Job>(`/api/jobs/${id}/effects`, {
         method: "POST",
@@ -312,10 +323,11 @@ export default function JobEditor() {
       effect: EffectName,
       enhanceMix?: number,
       studio?: StudioChain,
+      languages?: TranscriptionLanguage[],
     ) => {
       setApplyError(null);
       setShortfall(null);
-      applyMutation.mutate({ effect, enhanceMix, studio });
+      applyMutation.mutate({ effect, enhanceMix, studio, languages });
     },
     [applyMutation],
   );
@@ -521,6 +533,10 @@ export default function JobEditor() {
           defaultMix={project.pipeline_config.enhance_mix}
           defaultStudio={
             project.pipeline_config.studio_chain ?? DEFAULT_STUDIO
+          }
+          defaultLanguages={
+            project.pipeline_config.transcription_languages ??
+            DEFAULT_LANGUAGES
           }
         />
       </div>

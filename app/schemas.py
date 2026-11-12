@@ -8,6 +8,7 @@ from parecut_engine.schemas import (
     SpeakerRole,
     StageState,
     StudioChain,
+    TranscriptionLanguage,
 )
 
 FPS = Literal["24", "25", "29.97", "30", "60"]
@@ -112,6 +113,7 @@ class EffectCreate(BaseModel):
     effect: EffectName
     enhance_mix: float | None = Field(default=None, ge=0, le=1)
     studio: StudioChain | None = None
+    languages: list[TranscriptionLanguage] | None = None
 
 
 class SpeakerRolesUpdate(BaseModel):

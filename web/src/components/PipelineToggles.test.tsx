@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { PipelineConfig } from "../api/types";
-import { DEFAULT_STUDIO } from "../lib/effects";
+import { DEFAULT_LANGUAGES, DEFAULT_STUDIO } from "../lib/effects";
 import PipelineToggles from "./PipelineToggles";
 
 const complete: PipelineConfig = {
@@ -14,6 +14,7 @@ const complete: PipelineConfig = {
   separate_speakers: true,
   transcribe: true,
   rough_cut: true,
+  transcription_languages: DEFAULT_LANGUAGES,
 };
 
 describe("PipelineToggles", () => {

@@ -46,6 +46,7 @@ export interface PipelineConfig {
   separate_speakers: boolean;
   transcribe: boolean;
   rough_cut: boolean;
+  transcription_languages: TranscriptionLanguage[];
 }
 
 export interface StudioChain {
@@ -80,6 +81,8 @@ export type EffectName =
   | "separate_music"
   | "separate_speakers"
   | "transcribe";
+
+export type TranscriptionLanguage = "en" | "ar";
 
 export interface Job {
   id: string;

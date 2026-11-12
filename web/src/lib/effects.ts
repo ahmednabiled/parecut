@@ -1,4 +1,19 @@
-import type { EffectName, Job, StudioChain } from "../api/types";
+import type {
+  EffectName,
+  Job,
+  StudioChain,
+  TranscriptionLanguage,
+} from "../api/types";
+
+export const DEFAULT_LANGUAGES: TranscriptionLanguage[] = ["en"];
+
+export const TRANSCRIPTION_LANGUAGES: {
+  code: TranscriptionLanguage;
+  label: string;
+}[] = [
+  { code: "en", label: "English" },
+  { code: "ar", label: "Arabic" },
+];
 
 export const DEFAULT_STUDIO: StudioChain = {
   enabled: true,

@@ -112,7 +112,6 @@ async def test_draft_project_and_effect_run(app, client):
 async def test_enhance_effect_stores_studio_chain(app, client):
     created = await _draft_job(client)
     parent = created["job"]
-
     response = await client.post(
         f"/api/jobs/{parent['id']}/effects",
         json={
@@ -141,6 +140,21 @@ async def test_enhance_effect_stores_studio_chain(app, client):
     assert studio["limiter_db"] == -1.5
     assert studio["loudness_lufs"] == -14
     assert child["pipeline_config"]["enhance_mix"] == 0.7
+
+
+async def test_transcribe_effect_stores_languages(app, client):
+    created = await _draft_job(client)
+    parent = created["job"]
+
+    response = await client.post(
+        f"/api/jobs/{parent['id']}/effects",
+        json={"effect": "transcribe", "languages": ["en", "ar"]},
+    )
+    assert response.status_code == 201, response.text
+    child = response.json()
+    assert child["pipeline_config"]["transcribe"] is True
+    assert child["pipeline_config"]["rough_cut"] is True
+    assert child["pipeline_config"]["transcription_languages"] == ["en", "ar"]
 
 
 async def test_effect_run_requires_credits_and_project_parent(app, client):

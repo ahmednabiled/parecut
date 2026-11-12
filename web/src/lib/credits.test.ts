@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PipelineConfig } from "../api/types";
-import { DEFAULT_STUDIO } from "./effects";
+import { DEFAULT_LANGUAGES, DEFAULT_STUDIO } from "./effects";
 import { estimateCredits, validatePipeline } from "./credits";
 
 const complete: PipelineConfig = {
@@ -12,6 +12,7 @@ const complete: PipelineConfig = {
   separate_speakers: true,
   transcribe: true,
   rough_cut: true,
+  transcription_languages: DEFAULT_LANGUAGES,
 };
 
 describe("estimateCredits", () => {
