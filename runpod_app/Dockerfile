@@ -36,16 +36,14 @@ RUN pip install --no-cache-dir --no-deps "deepfilternet==0.5.6"
 
 # Resemble Enhance is installed without its dependency pins: the package pins
 # torch 2.1.1, soundfile 0.12.1, and a full Gradio stack that conflict with the
-# worker image. Only the inference modules are used, so install their runtime
-# dependencies explicitly.
+# worker image. Only the inference modules are used, so install their missing
+# runtime dependencies explicitly. pandas, matplotlib, omegaconf, rich, and
+# tabulate are already present from the main image stack.
 RUN pip install --no-cache-dir --no-deps "resemble-enhance==0.0.1"
 RUN pip install --no-cache-dir \
     "deepspeed==0.12.4" \
-    "pandas==2.1.3" \
-    "matplotlib==3.8.1" \
-    "omegaconf==2.3.0" \
-    "rich==13.7.0" \
-    "tabulate==0.8.10"
+    "librosa==0.10.1" \
+    "resampy==0.4.2"
 
 # Bake model weights into the image so workers do not download them on every
 # cold start.
