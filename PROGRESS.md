@@ -76,7 +76,7 @@ Complete:
 - Real transcription: WhisperX `large-v3-turbo` with word alignment
 - Real diarization: NVIDIA Nemotron-3-Diarization in an isolated Python venv
 - Speaker-attributed transcript fed into the before/after renderers and `ROUGH-CUT.md`
-- Endpoint release #14 pinned to `ghcr.io/ahmednabiled/parecut-worker:sha-61c6fa7`
+- Endpoint release #16 pinned to `ghcr.io/ahmednabiled/parecut-worker:sha-f710ec2`
 - R2 browser uploads proxied through FastAPI, with worker artifact uploads still using
   direct presigned R2 URLs; text artifacts served same-origin for previews and copy
 - Deterministic cut rules for restart false starts and same-speaker retakes; the
@@ -179,11 +179,11 @@ Worker image:
   `ghcr.io/ahmednabiled/parecut-worker:sha-<short>`.
 - The repository is private, so Runpod uses the `ghcr-parecut` registry credential with a
   GitHub PAT scoped to `read:packages`.
-- Endpoint release #14 runs `ghcr.io/ahmednabiled/parecut-worker:sha-61c6fa7`.
+- Endpoint release #16 runs `ghcr.io/ahmednabiled/parecut-worker:sha-f710ec2`.
 - The private pull was verified end to end: a fresh worker pulled the private image,
   processed jobs, and uploaded artifacts to R2.
-- The image bakes DeepFilterNet3, WhisperX `large-v3-turbo`, the English alignment
-  model, Demucs `htdemucs_ft`, and NVIDIA Nemotron-3-Diarization.
+- The image bakes DeepFilterNet3, Resemble Enhance, WhisperX `large-v3-turbo`, the
+  English alignment model, Demucs `htdemucs_ft`, and NVIDIA Nemotron-3-Diarization.
 - Nemotron runs in a separate `/opt/nemotron` venv with Python 3.11, torch 2.6.0, and
   transformers 5.22.1. The main worker stays on torch 2.2.2 so DeepFilterNet and
   WhisperX remain stable.
@@ -214,9 +214,10 @@ Current worker:
   It installs `ffmpeg`, `git`, `libsndfile1`, CPU torch/torchaudio 2.2.2, `soundfile`,
   `whisperx==3.3.1`, `pyannote.audio==3.3.2` (WhisperX VAD), `demucs==4.1.0`, and
   `transformers==4.48.3`.
-- `resemble-enhance==0.0.1` is installed with `--no-deps`; its inference-only runtime
-  dependencies are installed explicitly (`deepspeed==0.12.4`, `pandas==2.1.3`,
-  `matplotlib==3.8.1`, `omegaconf==2.3.0`, `rich==13.7.0`, `tabulate==0.8.10`).
+- `resemble-enhance==0.0.1` is installed with `--no-deps`; the missing inference
+  dependencies are installed explicitly (`deepspeed==0.12.4`, `librosa==0.10.1`,
+  `resampy==0.4.2`). The image's existing pandas, matplotlib, omegaconf, rich, and
+  tabulate versions are kept.
 - The `/opt/nemotron` venv installs torch/torchaudio 2.6.0, `transformers==5.22.1`,
   `numpy<2`, `soundfile`, `librosa`, and `accelerate`.
 - CTranslate2 is overridden to 4.6.0 after the WhisperX install: 4.4/4.5 fail on newer
@@ -388,6 +389,24 @@ The 55.7s interview clip is mixed-language and was detected as English; the Arab
 section was not fully transcribed. A forced-language option (or per-segment language
 handling) with the matching alignment model is the next transcript improvement.
 
+On 2026-11-12, release #16 (`sha-f710ec2`) added Resemble Enhance. The demo job ran an
+Enhance effect with mix 0.8 on the 55.7s clip:
+
+- The worker denoised with DeepFilterNet3, ran Resemble Enhance at 44.1 kHz, resampled
+  to 48 kHz, and blended the result back over the denoised input.
+- CPU inference completed in about 73 seconds from worker start (55.7s clip).
+- The artifact is labeled `Enhanced Audio (Resemble Enhance)`; its SHA-256 differs from
+  both the DeepFilterNet output and the older placeholder output.
+- The enhanced RMS is matched to the denoised input (`-24.27 dBFS`), so mute/unmute A/B
+  listening is fair; integrated loudness is `-23.9` vs `-23.7 LUFS`.
+- After loudness matching, energy above 10 kHz is about 1.4 dB higher and energy below
+  150 Hz about 1.1 dB higher than the denoised track; the 2–4 kHz presence band is about
+  1.1 dB lower. That is the restored body/air character; further presence/compression
+  tuning is a listening decision.
+
+The demo job keeps the real denoise and Resemble tracks only; the older placeholder
+enhance runs were removed.
+
 Production serving was verified on the FastAPI process: `GET /` returns the built SPA,
 `GET /jobs/abc` returns the SPA for deep links, `/brand/login-logo.png` returns the
 brand asset, and `/api/does-not-exist` returns JSON 404.
@@ -444,9 +463,9 @@ The progress file itself adds one more documentation commit after these.
 
 ## Next actions in order
 
-1. Deploy the Resemble Enhance worker image and verify the enhanced track on the demo
-   clip. The worker code and CPU stack are in place; the Runpod release still needs the
-   new image.
+1. Audition the Resemble-enhanced demo track and tune the wet mix or add a light
+   presence/compression finishing chain only if it is needed. The Resemble worker is
+   live as release #16.
 2. Replace the gated per-speaker stems with true target-speaker extraction
    (MossFormer2-SS) if the product needs overlapping-speech separation.
 3. Add a language selector/forced language for mixed-language recordings and bake the

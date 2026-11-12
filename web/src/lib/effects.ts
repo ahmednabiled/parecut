@@ -22,7 +22,7 @@ export const EFFECTS: EffectDefinition[] = [
     label: "Enhance",
     action: "Apply enhancement",
     description:
-      "Resemble Enhance restores bandwidth and body and re-synthesizes the voice at 44.1 kHz. CPU runs can take a few minutes.",
+      "Resemble Enhance restores bandwidth and body at 44.1 kHz. The mix blends it over the denoised track; CPU runs can take a few minutes.",
     producesAudio: true,
   },
   {
