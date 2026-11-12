@@ -172,7 +172,7 @@ export default function AppShell() {
           type="button"
           onClick={() => setSidebarOpen(true)}
           aria-label="Open sidebar"
-          className="fixed left-2 top-2 z-40 hidden size-8 place-items-center rounded-full border border-outline-variant bg-surface-container text-on-surface-variant transition-colors duration-150 ease-standard hover:bg-surface-container-high hover:text-on-surface lg:grid"
+          className="fixed left-2 top-9 z-40 hidden size-8 place-items-center rounded-md text-on-surface-variant transition-colors duration-150 ease-standard hover:bg-surface-container-high hover:text-on-surface lg:grid"
         >
           <NavIcon name="menu" />
         </button>
