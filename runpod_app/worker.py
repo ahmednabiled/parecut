@@ -16,6 +16,7 @@ from parecut_engine.schemas import (
     PipelineConfig,
     RoughCutMeta,
     SpeakerRole,
+    StudioChain,
     Transcript,
     TranscriptSegment,
 )
@@ -32,6 +33,7 @@ MIME_TYPES = {
 
 Denoiser = Callable[[Path, Path], None]
 Enhancer = Callable[[Path, Path, float], None]
+StudioPolisher = Callable[[Path, Path, StudioChain], None]
 Transcriber = Callable[[Path], Transcript]
 Diarizer = Callable[[Path], list["SpeakerTurn"]]
 Separator = Callable[[Path, Path], tuple[bytes, bytes]]
@@ -185,6 +187,68 @@ def _resemble_enhance(input_path: Path, output_path: Path, mix: float) -> None:
         48000,
         bits_per_sample=16,
     )
+
+
+def _db_to_linear(db: float) -> float:
+    return 10 ** (db / 20)
+
+
+def _studio_filter_chain(chain: StudioChain) -> str:
+    filters = [
+        f"highpass=f={chain.highpass_hz:.0f}:poles=2",
+        f"equalizer=f=120:t=q:w=1:g={chain.body_db:.2f}",
+        f"equalizer=f=320:t=q:w=1:g={chain.mud_db:.2f}",
+        f"equalizer=f=3500:t=q:w=1:g={chain.presence_db:.2f}",
+    ]
+    if chain.deesser > 0:
+        filters.append(f"deesser=i={chain.deesser:.3f}:m=0.5:f=0.5")
+    filters.extend(
+        [
+            "acompressor=threshold={:.5f}:ratio={:.2f}:attack={:.2f}:release={:.2f}:makeup=1:knee=2.5:detection=rms".format(
+                _db_to_linear(chain.compressor_threshold_db),
+                chain.compressor_ratio,
+                chain.compressor_attack_ms,
+                chain.compressor_release_ms,
+            ),
+            f"alimiter=limit={_db_to_linear(chain.limiter_db):.5f}:attack=5:release=50:level=false",
+            f"loudnorm=I={chain.loudness_lufs:.2f}:TP=-1.5:LRA=11",
+        ]
+    )
+    return ",".join(filters)
+
+
+def _studio_polish(
+    input_path: Path,
+    output_path: Path,
+    chain: StudioChain,
+) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                str(input_path),
+                "-af",
+                _studio_filter_chain(chain),
+                "-ar",
+                "48000",
+                "-ac",
+                "1",
+                "-c:a",
+                "pcm_s16le",
+                str(output_path),
+            ],
+            check=True,
+            capture_output=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        stderr = (exc.stderr or b"").decode("utf-8", "replace")
+        raise RuntimeError(f"studio polish failed: {stderr[-1000:]}") from exc
 
 
 def prepare_audio(
@@ -519,11 +583,13 @@ def _artifact_content(
     return source
 
 
-def _artifact_label(artifact: dict[str, str]) -> str:
+def _artifact_label(artifact: dict[str, str], *, studio: bool = False) -> str:
     kind = artifact["kind"]
     if kind == "cleaned_audio":
         return "Denoised Audio (DeepFilterNet3)"
     if kind == "enhanced_audio":
+        if studio:
+            return "Studio Enhanced Audio (Resemble Enhance)"
         return "Enhanced Audio (Resemble Enhance)"
     if kind == "stem_music":
         return "Music Stem (Demucs)"
@@ -547,6 +613,7 @@ def handler(
     *,
     denoiser: Denoiser | None = None,
     enhancer: Enhancer | None = None,
+    polisher: StudioPolisher | None = None,
     transcriber: Transcriber | None = None,
     diarizer: Diarizer | None = None,
     separator: Separator | None = None,
@@ -584,6 +651,18 @@ def handler(
             else:
                 enhancer(working_wav, enhanced_path, config.enhance_mix)
             enhanced = enhanced_path.read_bytes()
+
+            if config.studio_chain.enabled:
+                polished_path = workdir / "enhanced_polished.wav"
+                if polisher is None:
+                    _studio_polish(
+                        enhanced_path,
+                        polished_path,
+                        config.studio_chain,
+                    )
+                else:
+                    polisher(enhanced_path, polished_path, config.studio_chain)
+                enhanced = polished_path.read_bytes()
 
         turns: list[SpeakerTurn] = []
         diarization_fallback = False
@@ -662,7 +741,12 @@ def handler(
                 {
                     "key": artifact["key"],
                     "kind": artifact["kind"],
-                    "label": _artifact_label(artifact),
+                    "label": _artifact_label(
+                        artifact,
+                        studio=(
+                            config.enhance and config.studio_chain.enabled
+                        ),
+                    ),
                     "format": artifact["format"],
                     "size_bytes": len(content),
                 }

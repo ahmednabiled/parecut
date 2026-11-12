@@ -2,12 +2,14 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { PipelineConfig } from "../api/types";
+import { DEFAULT_STUDIO } from "../lib/effects";
 import PipelineToggles from "./PipelineToggles";
 
 const complete: PipelineConfig = {
   noise_reduction: true,
   enhance: true,
   enhance_mix: 0.8,
+  studio_chain: DEFAULT_STUDIO,
   separate_music: true,
   separate_speakers: true,
   transcribe: true,

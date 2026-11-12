@@ -3,8 +3,17 @@ import wave
 from pathlib import Path
 
 from app.services.runpod import expected_artifacts
-from parecut_engine.schemas import PipelineConfig, Transcript, TranscriptSegment
-from runpod_app.worker import SpeakerTurn, handler
+from parecut_engine.schemas import (
+    PipelineConfig,
+    StudioChain,
+    Transcript,
+    TranscriptSegment,
+)
+from runpod_app.worker import (
+    SpeakerTurn,
+    _studio_filter_chain,
+    handler,
+)
 from tests.helpers import make_wav
 
 SOURCE = make_wav(2.0)
@@ -49,6 +58,15 @@ def fake_enhancer(input_path: Path, output_path: Path, mix: float) -> None:
         assert reader.getnchannels() == 1
     assert 0 <= mix <= 1
     output_path.write_bytes(ENHANCED_AUDIO)
+
+
+def fake_polisher(
+    input_path: Path,
+    output_path: Path,
+    chain: StudioChain,
+) -> None:
+    assert chain.enabled
+    output_path.write_bytes(input_path.read_bytes())
 
 
 def fake_transcriber(wav_path: Path) -> Transcript:
@@ -123,6 +141,7 @@ def test_worker_runs_real_pipeline_stages():
         client=client,
         denoiser=fake_denoiser,
         enhancer=fake_enhancer,
+        polisher=fake_polisher,
         transcriber=fake_transcriber,
         diarizer=fake_diarizer,
         separator=fake_separator,
@@ -167,7 +186,7 @@ def test_worker_runs_real_pipeline_stages():
         if artifact["kind"] == "stem_speaker"
     ]
     assert labels["cleaned_audio"] == "Denoised Audio (DeepFilterNet3)"
-    assert labels["enhanced_audio"] == "Enhanced Audio (Resemble Enhance)"
+    assert labels["enhanced_audio"] == "Studio Enhanced Audio (Resemble Enhance)"
     assert labels["stem_music"] == "Music Stem (Demucs)"
     assert speaker_labels == ["Speaker 01 (gated)", "Speaker 02 (gated)"]
     assert labels["transcript_before"] == "Transcript (Before Cut)"
@@ -256,20 +275,36 @@ def test_enhance_only_runs_after_denoise_and_uses_mix():
         transcribe=False,
         rough_cut=False,
         enhance_mix=0.65,
+        studio_chain=StudioChain(
+            body_db=3.5,
+            presence_db=-1.0,
+            compressor_ratio=3.2,
+            loudness_lufs=-14.0,
+        ),
     )
     job = make_job(config)
     client = FakeClient()
     mixes: list[float] = []
+    chains: list[StudioChain] = []
 
     def enhancer(input_path: Path, output_path: Path, mix: float) -> None:
         fake_enhancer(input_path, output_path, mix)
         mixes.append(mix)
+
+    def polisher(
+        input_path: Path,
+        output_path: Path,
+        chain: StudioChain,
+    ) -> None:
+        fake_polisher(input_path, output_path, chain)
+        chains.append(chain)
 
     result = handler(
         job,
         client=client,
         denoiser=fake_denoiser,
         enhancer=enhancer,
+        polisher=polisher,
     )
 
     expected = job["input"]["expected_artifacts"]
@@ -281,9 +316,75 @@ def test_enhance_only_runs_after_denoise_and_uses_mix():
     uploaded = _uploaded(client, job)
 
     assert mixes == [0.65]
+    assert chains[0].body_db == 3.5
+    assert chains[0].presence_db == -1.0
+    assert chains[0].compressor_ratio == 3.2
     assert uploaded[enhanced_key] == ENHANCED_AUDIO
     assert [artifact["kind"] for artifact in result["artifacts"]] == [
         "enhanced_audio"
     ]
-    assert result["artifacts"][0]["label"] == "Enhanced Audio (Resemble Enhance)"
+    assert result["artifacts"][0]["label"] == (
+        "Studio Enhanced Audio (Resemble Enhance)"
+    )
     assert result["stages"]["enhance"]["status"] == "completed"
+
+
+def test_enhance_skips_studio_when_disabled():
+    config = PipelineConfig(
+        noise_reduction=False,
+        enhance=True,
+        separate_music=False,
+        separate_speakers=False,
+        transcribe=False,
+        rough_cut=False,
+        studio_chain=StudioChain(enabled=False),
+    )
+    job = make_job(config)
+    client = FakeClient()
+
+    def fail_polisher(
+        input_path: Path,
+        output_path: Path,
+        chain: StudioChain,
+    ) -> None:
+        raise AssertionError("studio polish should not run")
+
+    result = handler(
+        job,
+        client=client,
+        denoiser=fake_denoiser,
+        enhancer=fake_enhancer,
+        polisher=fail_polisher,
+    )
+
+    assert [artifact["kind"] for artifact in result["artifacts"]] == [
+        "enhanced_audio"
+    ]
+    assert result["artifacts"][0]["label"] == "Enhanced Audio (Resemble Enhance)"
+
+
+def test_studio_filter_chain_matches_controls():
+    chain = StudioChain(
+        highpass_hz=80,
+        body_db=2.5,
+        mud_db=-1.5,
+        presence_db=3.0,
+        deesser=0.4,
+        compressor_threshold_db=-20,
+        compressor_ratio=3.0,
+        compressor_attack_ms=12,
+        compressor_release_ms=180,
+        limiter_db=-1.5,
+        loudness_lufs=-14,
+    )
+    filters = _studio_filter_chain(chain)
+
+    assert "highpass=f=80" in filters
+    assert "equalizer=f=120:t=q:w=1:g=2.50" in filters
+    assert "equalizer=f=320:t=q:w=1:g=-1.50" in filters
+    assert "equalizer=f=3500:t=q:w=1:g=3.00" in filters
+    assert "deesser=i=0.400" in filters
+    assert "acompressor=threshold=0.10000:ratio=3.00" in filters
+    assert "attack=12.00:release=180.00" in filters
+    assert "alimiter=limit=0.84140" in filters
+    assert "loudnorm=I=-14.00" in filters

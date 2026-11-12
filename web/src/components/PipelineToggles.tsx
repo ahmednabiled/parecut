@@ -7,7 +7,7 @@ interface PipelineTogglesProps {
   disabled?: boolean;
 }
 
-type StageKey = Exclude<keyof PipelineConfig, "enhance_mix">;
+type StageKey = Exclude<keyof PipelineConfig, "enhance_mix" | "studio_chain">;
 
 const STAGES: {
   key: StageKey;

@@ -14,10 +14,26 @@ StageName = Literal[
 ]
 
 
+class StudioChain(BaseModel):
+    enabled: bool = True
+    highpass_hz: float = Field(default=75, ge=20, le=300)
+    body_db: float = Field(default=2.0, ge=-12, le=12)
+    mud_db: float = Field(default=-2.0, ge=-12, le=6)
+    presence_db: float = Field(default=1.5, ge=-12, le=12)
+    deesser: float = Field(default=0.35, ge=0, le=1)
+    compressor_threshold_db: float = Field(default=-18, ge=-60, le=0)
+    compressor_ratio: float = Field(default=2.5, ge=1, le=20)
+    compressor_attack_ms: float = Field(default=15, ge=0.1, le=200)
+    compressor_release_ms: float = Field(default=150, ge=10, le=2000)
+    limiter_db: float = Field(default=-1.0, ge=-12, le=0)
+    loudness_lufs: float = Field(default=-16.0, ge=-30, le=-8)
+
+
 class PipelineConfig(BaseModel):
     noise_reduction: bool = True
     enhance: bool = True
     enhance_mix: float = Field(default=0.8, ge=0, le=1)
+    studio_chain: StudioChain = Field(default_factory=StudioChain)
     separate_music: bool = True
     separate_speakers: bool = True
     transcribe: bool = True

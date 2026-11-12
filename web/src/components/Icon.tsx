@@ -8,11 +8,15 @@ import dashboard from "@material-symbols/svg-400/rounded/dashboard.svg";
 import download from "@material-symbols/svg-400/rounded/download.svg";
 import edit from "@material-symbols/svg-400/rounded/edit.svg";
 import graphicEq from "@material-symbols/svg-400/rounded/graphic_eq.svg";
+import keyboardArrowDown from "@material-symbols/svg-400/rounded/keyboard_arrow_down.svg";
+import keyboardArrowUp from "@material-symbols/svg-400/rounded/keyboard_arrow_up.svg";
 import logout from "@material-symbols/svg-400/rounded/logout.svg";
 import movie from "@material-symbols/svg-400/rounded/movie.svg";
 import pause from "@material-symbols/svg-400/rounded/pause.svg";
 import playArrow from "@material-symbols/svg-400/rounded/play_arrow.svg";
+import restartAlt from "@material-symbols/svg-400/rounded/restart_alt.svg";
 import settings from "@material-symbols/svg-400/rounded/settings.svg";
+import tune from "@material-symbols/svg-400/rounded/tune.svg";
 import upload from "@material-symbols/svg-400/rounded/upload.svg";
 import volumeOff from "@material-symbols/svg-400/rounded/volume_off.svg";
 import volumeUp from "@material-symbols/svg-400/rounded/volume_up.svg";
@@ -29,11 +33,15 @@ const ICONS = {
   download,
   edit,
   graphic_eq: graphicEq,
+  keyboard_arrow_down: keyboardArrowDown,
+  keyboard_arrow_up: keyboardArrowUp,
   logout,
   movie,
   pause,
   play_arrow: playArrow,
+  restart_alt: restartAlt,
   settings,
+  tune,
   upload,
   volume_off: volumeOff,
   volume_up: volumeUp,

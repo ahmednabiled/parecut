@@ -88,6 +88,11 @@ out, out_rate = enhance(
 print("resemble enhance smoke:", tuple(out.shape), out_rate)
 PY
 
+# Verify the studio finishing filters are available in this ffmpeg build.
+RUN ffmpeg -hide_banner -loglevel error -y -f lavfi -i "sine=frequency=440:duration=1" \
+    -af "highpass=f=75:poles=2,equalizer=f=120:t=q:w=1:g=2,equalizer=f=320:t=q:w=1:g=-2,equalizer=f=3500:t=q:w=1:g=1.5,deesser=i=0.35:m=0.5:f=0.5,acompressor=threshold=0.126:ratio=2.5:attack=15:release=150:makeup=1:knee=2.5:detection=rms,alimiter=limit=0.891:attack=5:release=50:level=false,loudnorm=I=-16:TP=-1.5:LRA=11" \
+    -ar 48000 -ac 1 /tmp/studio_smoke.wav
+
 RUN python - <<'PY'
 from huggingface_hub import snapshot_download
 

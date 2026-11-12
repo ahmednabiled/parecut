@@ -3,7 +3,12 @@ from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field
 
-from parecut_engine.schemas import PipelineConfig, SpeakerRole, StageState
+from parecut_engine.schemas import (
+    PipelineConfig,
+    SpeakerRole,
+    StageState,
+    StudioChain,
+)
 
 FPS = Literal["24", "25", "29.97", "30", "60"]
 
@@ -104,6 +109,7 @@ class JobCreate(BaseModel):
 class EffectCreate(BaseModel):
     effect: EffectName
     enhance_mix: float | None = Field(default=None, ge=0, le=1)
+    studio: StudioChain | None = None
 
 
 class SpeakerRolesUpdate(BaseModel):

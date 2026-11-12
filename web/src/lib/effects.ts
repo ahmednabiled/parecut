@@ -1,4 +1,19 @@
-import type { EffectName, Job } from "../api/types";
+import type { EffectName, Job, StudioChain } from "../api/types";
+
+export const DEFAULT_STUDIO: StudioChain = {
+  enabled: true,
+  highpass_hz: 75,
+  body_db: 2,
+  mud_db: -2,
+  presence_db: 1.5,
+  deesser: 0.35,
+  compressor_threshold_db: -18,
+  compressor_ratio: 2.5,
+  compressor_attack_ms: 15,
+  compressor_release_ms: 150,
+  limiter_db: -1,
+  loudness_lufs: -16,
+};
 
 export interface EffectDefinition {
   name: EffectName;

@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { PipelineConfig } from "../api/types";
+import { DEFAULT_STUDIO } from "./effects";
 import { estimateCredits, validatePipeline } from "./credits";
 
 const complete: PipelineConfig = {
   noise_reduction: true,
   enhance: true,
   enhance_mix: 0.8,
+  studio_chain: DEFAULT_STUDIO,
   separate_music: true,
   separate_speakers: true,
   transcribe: true,

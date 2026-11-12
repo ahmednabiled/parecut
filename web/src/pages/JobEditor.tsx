@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError, apiFetch } from "../api/client";
-import type { Artifact, EffectName, Job } from "../api/types";
+import type { Artifact, EffectName, Job, StudioChain } from "../api/types";
 import Inspector from "../components/editor/Inspector";
 import Timeline from "../components/editor/Timeline";
 import type { EditorTrack } from "../components/editor/types";
@@ -19,6 +19,7 @@ import {
 } from "../lib/captions";
 import {
   AUDIO_KINDS,
+  DEFAULT_STUDIO,
   effectLabel,
   RUNNING_STATUSES,
 } from "../lib/effects";
@@ -254,18 +255,23 @@ export default function JobEditor() {
   );
 
   const applyMutation = useMutation({
-    mutationFn: (variables: { effect: EffectName; enhanceMix?: number }) =>
-      apiFetch<Job>(`/api/jobs/${id}/effects`, {
+    mutationFn: (variables: {
+      effect: EffectName;
+      enhanceMix?: number;
+      studio?: StudioChain;
+    }) => {
+      const payload: Record<string, unknown> = { effect: variables.effect };
+      if (variables.enhanceMix !== undefined) {
+        payload.enhance_mix = variables.enhanceMix;
+      }
+      if (variables.studio !== undefined) {
+        payload.studio = variables.studio;
+      }
+      return apiFetch<Job>(`/api/jobs/${id}/effects`, {
         method: "POST",
-        body: JSON.stringify(
-          variables.enhanceMix === undefined
-            ? { effect: variables.effect }
-            : {
-                effect: variables.effect,
-                enhance_mix: variables.enhanceMix,
-              },
-        ),
-      }),
+        body: JSON.stringify(payload),
+      });
+    },
     onSuccess: (run) => {
       queryClient.setQueryData<Job[]>(["job-effects", id], (current) => [
         ...(current ?? []),
@@ -299,10 +305,14 @@ export default function JobEditor() {
   });
 
   const handleApply = useCallback(
-    (effect: EffectName, enhanceMix?: number) => {
+    (
+      effect: EffectName,
+      enhanceMix?: number,
+      studio?: StudioChain,
+    ) => {
       setApplyError(null);
       setShortfall(null);
-      applyMutation.mutate({ effect, enhanceMix });
+      applyMutation.mutate({ effect, enhanceMix, studio });
     },
     [applyMutation],
   );
@@ -506,6 +516,9 @@ export default function JobEditor() {
           speakerJob={speakerJob}
           onSpeakerUpdated={handleSpeakerUpdated}
           defaultMix={project.pipeline_config.enhance_mix}
+          defaultStudio={
+            project.pipeline_config.studio_chain ?? DEFAULT_STUDIO
+          }
         />
       </div>
 

@@ -9,7 +9,7 @@ from app.schemas import EffectCreate, EffectName, JobCreate
 from app.services.credits import add_ledger_entry, reserve_minutes
 from app.services.stages import initial_stage_states
 from app.storage import ObjectStorage
-from parecut_engine.schemas import PipelineConfig
+from parecut_engine.schemas import PipelineConfig, StudioChain
 
 DRAFT_CONFIG = PipelineConfig(
     noise_reduction=False,
@@ -21,13 +21,19 @@ DRAFT_CONFIG = PipelineConfig(
 )
 
 
-def effect_config(effect: EffectName, enhance_mix: float | None = None) -> PipelineConfig:
+def effect_config(
+    effect: EffectName,
+    enhance_mix: float | None = None,
+    studio: StudioChain | None = None,
+) -> PipelineConfig:
     values = DRAFT_CONFIG.model_dump()
     if effect == "noise_reduction":
         values["noise_reduction"] = True
     elif effect == "enhance":
         values["enhance"] = True
         values["enhance_mix"] = enhance_mix if enhance_mix is not None else 0.8
+        if studio is not None:
+            values["studio_chain"] = studio.model_dump()
     elif effect == "separate_music":
         values["separate_music"] = True
     elif effect == "separate_speakers":
@@ -168,7 +174,7 @@ async def create_effect_run(
     if available < minutes:
         raise InsufficientCredits(minutes, available)
 
-    config = effect_config(data.effect, data.enhance_mix)
+    config = effect_config(data.effect, data.enhance_mix, data.studio)
     job = Job(
         user_id=user.id,
         parent_job_id=parent.id,

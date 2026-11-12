@@ -96,6 +96,40 @@ async def test_draft_project_and_effect_run(app, client):
     assert partial_content.content == created["source"][-8:]
 
 
+async def test_enhance_effect_stores_studio_chain(app, client):
+    created = await _draft_job(client)
+    parent = created["job"]
+
+    response = await client.post(
+        f"/api/jobs/{parent['id']}/effects",
+        json={
+            "effect": "enhance",
+            "enhance_mix": 0.7,
+            "studio": {
+                "highpass_hz": 90,
+                "body_db": 4,
+                "presence_db": 2.5,
+                "compressor_threshold_db": -20,
+                "compressor_ratio": 4,
+                "limiter_db": -1.5,
+                "loudness_lufs": -14,
+            },
+        },
+    )
+    assert response.status_code == 201, response.text
+    child = response.json()
+    studio = child["pipeline_config"]["studio_chain"]
+    assert studio["enabled"] is True
+    assert studio["highpass_hz"] == 90
+    assert studio["body_db"] == 4
+    assert studio["presence_db"] == 2.5
+    assert studio["compressor_threshold_db"] == -20
+    assert studio["compressor_ratio"] == 4
+    assert studio["limiter_db"] == -1.5
+    assert studio["loudness_lufs"] == -14
+    assert child["pipeline_config"]["enhance_mix"] == 0.7
+
+
 async def test_effect_run_requires_credits_and_project_parent(app, client):
     created = await _draft_job(client)
     parent = created["job"]

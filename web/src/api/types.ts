@@ -41,10 +41,26 @@ export interface PipelineConfig {
   noise_reduction: boolean;
   enhance: boolean;
   enhance_mix: number;
+  studio_chain: StudioChain;
   separate_music: boolean;
   separate_speakers: boolean;
   transcribe: boolean;
   rough_cut: boolean;
+}
+
+export interface StudioChain {
+  enabled: boolean;
+  highpass_hz: number;
+  body_db: number;
+  mud_db: number;
+  presence_db: number;
+  deesser: number;
+  compressor_threshold_db: number;
+  compressor_ratio: number;
+  compressor_attack_ms: number;
+  compressor_release_ms: number;
+  limiter_db: number;
+  loudness_lufs: number;
 }
 
 export interface Artifact {
