@@ -40,6 +40,17 @@ def fake_denoiser(input_path: Path, output_path: Path) -> None:
     output_path.write_bytes(input_path.read_bytes())
 
 
+ENHANCED_AUDIO = make_wav(1.0)
+
+
+def fake_enhancer(input_path: Path, output_path: Path, mix: float) -> None:
+    with wave.open(str(input_path)) as reader:
+        assert reader.getframerate() == 48000
+        assert reader.getnchannels() == 1
+    assert 0 <= mix <= 1
+    output_path.write_bytes(ENHANCED_AUDIO)
+
+
 def fake_transcriber(wav_path: Path) -> Transcript:
     return Transcript(
         speakers=["SPEAKER_01"],
@@ -111,6 +122,7 @@ def test_worker_runs_real_pipeline_stages():
         job,
         client=client,
         denoiser=fake_denoiser,
+        enhancer=fake_enhancer,
         transcriber=fake_transcriber,
         diarizer=fake_diarizer,
         separator=fake_separator,
@@ -125,7 +137,8 @@ def test_worker_runs_real_pipeline_stages():
     speaker_keys = [a["key"] for a in expected if a["kind"] == "stem_speaker"]
 
     assert uploaded[cleaned].startswith(b"RIFF")
-    assert uploaded[enhanced] == uploaded[cleaned]
+    assert uploaded[enhanced] == ENHANCED_AUDIO
+    assert uploaded[enhanced] != uploaded[cleaned]
     assert uploaded[music] == b"music-stem"
     assert uploaded[dialogue] == b"dialogue-stem"
     assert _frames(uploaded[speaker_keys[0]]) == _frames(uploaded[cleaned])
@@ -154,6 +167,7 @@ def test_worker_runs_real_pipeline_stages():
         if artifact["kind"] == "stem_speaker"
     ]
     assert labels["cleaned_audio"] == "Denoised Audio (DeepFilterNet3)"
+    assert labels["enhanced_audio"] == "Enhanced Audio (Resemble Enhance)"
     assert labels["stem_music"] == "Music Stem (Demucs)"
     assert speaker_labels == ["Speaker 01 (gated)", "Speaker 02 (gated)"]
     assert labels["transcript_before"] == "Transcript (Before Cut)"
@@ -185,6 +199,9 @@ def test_worker_skips_disabled_models():
     def fail_denoiser(input_path: Path, output_path: Path) -> None:
         raise AssertionError("denoiser should not run")
 
+    def fail_enhancer(input_path: Path, output_path: Path, mix: float) -> None:
+        raise AssertionError("enhancer should not run")
+
     def fail_separator(wav_path: Path, workdir: Path) -> tuple[bytes, bytes]:
         raise AssertionError("separator should not run")
 
@@ -192,6 +209,7 @@ def test_worker_skips_disabled_models():
         job,
         client=client,
         denoiser=fail_denoiser,
+        enhancer=fail_enhancer,
         transcriber=fake_transcriber,
         diarizer=fake_diarizer,
         separator=fail_separator,
@@ -214,6 +232,7 @@ def test_worker_falls_back_to_one_speaker_when_diarization_fails():
         job,
         client=client,
         denoiser=fake_denoiser,
+        enhancer=fake_enhancer,
         transcriber=fake_transcriber,
         diarizer=broken_diarizer,
         separator=fake_separator,
@@ -226,3 +245,45 @@ def test_worker_falls_back_to_one_speaker_when_diarization_fails():
         artifact for artifact in result["artifacts"] if artifact["kind"] == "stem_speaker"
     ]
     assert len(speaker_artifacts) == 1
+
+
+def test_enhance_only_runs_after_denoise_and_uses_mix():
+    config = PipelineConfig(
+        noise_reduction=False,
+        enhance=True,
+        separate_music=False,
+        separate_speakers=False,
+        transcribe=False,
+        rough_cut=False,
+        enhance_mix=0.65,
+    )
+    job = make_job(config)
+    client = FakeClient()
+    mixes: list[float] = []
+
+    def enhancer(input_path: Path, output_path: Path, mix: float) -> None:
+        fake_enhancer(input_path, output_path, mix)
+        mixes.append(mix)
+
+    result = handler(
+        job,
+        client=client,
+        denoiser=fake_denoiser,
+        enhancer=enhancer,
+    )
+
+    expected = job["input"]["expected_artifacts"]
+    enhanced_key = next(
+        artifact["key"]
+        for artifact in expected
+        if artifact["kind"] == "enhanced_audio"
+    )
+    uploaded = _uploaded(client, job)
+
+    assert mixes == [0.65]
+    assert uploaded[enhanced_key] == ENHANCED_AUDIO
+    assert [artifact["kind"] for artifact in result["artifacts"]] == [
+        "enhanced_audio"
+    ]
+    assert result["artifacts"][0]["label"] == "Enhanced Audio (Resemble Enhance)"
+    assert result["stages"]["enhance"]["status"] == "completed"

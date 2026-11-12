@@ -34,9 +34,61 @@ RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/wh
 # resolution for the pure-Python package and install its runtime deps above.
 RUN pip install --no-cache-dir --no-deps "deepfilternet==0.5.6"
 
+# Resemble Enhance is installed without its dependency pins: the package pins
+# torch 2.1.1, soundfile 0.12.1, and a full Gradio stack that conflict with the
+# worker image. Only the inference modules are used, so install their runtime
+# dependencies explicitly.
+RUN pip install --no-cache-dir --no-deps "resemble-enhance==0.0.1"
+RUN pip install --no-cache-dir \
+    "deepspeed==0.12.4" \
+    "pandas==2.1.3" \
+    "matplotlib==3.8.1" \
+    "omegaconf==2.3.0" \
+    "rich==13.7.0" \
+    "tabulate==0.8.10"
+
 # Bake model weights into the image so workers do not download them on every
 # cold start.
 RUN python -c "from df.enhance import init_df; init_df(log_file=None)"
+
+RUN python - <<'PY'
+from huggingface_hub import snapshot_download
+
+snapshot_download(
+    "ResembleAI/resemble-enhance",
+    local_dir="/opt/resemble-enhance",
+    allow_patterns=["enhancer_stage2/**"],
+)
+PY
+
+# Smoke-test the Resemble inference path so a broken dependency or checkpoint
+# fails the image build instead of the first user job.
+RUN python - <<'PY'
+import wave
+from pathlib import Path
+
+import torchaudio
+from resemble_enhance.enhancer.inference import enhance
+
+with wave.open("/tmp/resemble_smoke.wav", "wb") as writer:
+    writer.setnchannels(1)
+    writer.setsampwidth(2)
+    writer.setframerate(44100)
+    writer.writeframes(b"\x00\x00" * 4410)
+
+wav, rate = torchaudio.load("/tmp/resemble_smoke.wav")
+out, out_rate = enhance(
+    dwav=wav.mean(0),
+    sr=rate,
+    device="cpu",
+    nfe=1,
+    solver="euler",
+    lambd=0.0,
+    tau=0.5,
+    run_dir=Path("/opt/resemble-enhance/enhancer_stage2"),
+)
+print("resemble enhance smoke:", tuple(out.shape), out_rate)
+PY
 
 RUN python - <<'PY'
 from huggingface_hub import snapshot_download

@@ -84,11 +84,14 @@ Complete:
   when every speaker is a presenter
 - Speaker-role regeneration uses the real canonical transcript and keeps real artifact
   labels; mock/demo jobs still get `Demo —` labels
+- Real enhancement with Resemble Enhance: the worker denoises with DeepFilterNet3,
+  restores and extends the voice at 44.1 kHz, blends it with the denoised input using
+  `enhance_mix`, and labels the track `Enhanced Audio (Resemble Enhance)`
 
 Pending:
 
-- Resemble Enhance for the enhancement stage; `enhanced_audio` currently reuses the
-  DeepFilterNet3 output and is labeled `Denoised Audio (Enhancement pending)`
+- GPU inference for Resemble Enhance, transcription, separation, and diarization; the
+  current worker runs CPU torch
 - True target-speaker separation; per-speaker stems are currently gated by diarization
   turns, and MossFormer2-SS remains optional
 - LLM take selection on top of the deterministic false-start/retake rules
@@ -203,12 +206,17 @@ Current worker:
 - Cut outputs: the real speaker-attributed transcript is the canonical
   `transcript_before.json`; `build_cut_plan`, the before/after renderers, and
   `ROUGH-CUT.md` use it. `PATCH /speakers` regenerates from the real transcript.
-- Enhancement: `enhanced_audio` reuses the denoised WAV and is labeled
-  `Denoised Audio (Enhancement pending)`. Resemble Enhance is not installed.
+- Enhancement: Resemble Enhance is installed and baked into `/opt/resemble-enhance`.
+  DeepFilterNet3 denoises first, then Resemble re-synthesizes the voice at 44.1 kHz;
+  the result is resampled to 48 kHz and blended with the denoised input using
+  `enhance_mix` (default 0.8). CPU inference uses 32 CFM steps.
 - The image uses Python 3.11 because `deepfilterlib` has no Python 3.12 wheel.
   It installs `ffmpeg`, `git`, `libsndfile1`, CPU torch/torchaudio 2.2.2, `soundfile`,
   `whisperx==3.3.1`, `pyannote.audio==3.3.2` (WhisperX VAD), `demucs==4.1.0`, and
   `transformers==4.48.3`.
+- `resemble-enhance==0.0.1` is installed with `--no-deps`; its inference-only runtime
+  dependencies are installed explicitly (`deepspeed==0.12.4`, `pandas==2.1.3`,
+  `matplotlib==3.8.1`, `omegaconf==2.3.0`, `rich==13.7.0`, `tabulate==0.8.10`).
 - The `/opt/nemotron` venv installs torch/torchaudio 2.6.0, `transformers==5.22.1`,
   `numpy<2`, `soundfile`, `librosa`, and `accelerate`.
 - CTranslate2 is overridden to 4.6.0 after the WhisperX install: 4.4/4.5 fail on newer
@@ -242,8 +250,8 @@ Model stack currently deployed:
 - Transcription: WhisperX 3.3.1 `large-v3-turbo` with English word alignment
 - Music separation: Demucs `htdemucs_ft`
 - Speaker stems: diarization-gated audio (not true target-speaker extraction)
-- Enhancement: DeepFilterNet3 output as a placeholder; Resemble Enhance pending
-- Optional future: MossFormer2-SS and Resemble Enhance
+- Enhancement: Resemble Enhance (44.1 kHz restoration and bandwidth extension)
+- Optional future: MossFormer2-SS for true target-speaker extraction
 
 Important current facts from official docs (verified 2026-11-08):
 
@@ -436,8 +444,9 @@ The progress file itself adds one more documentation commit after these.
 
 ## Next actions in order
 
-1. Add Resemble Enhance for the enhancement stage. `enhanced_audio` currently reuses
-   the DeepFilterNet3 output and is labeled `Denoised Audio (Enhancement pending)`.
+1. Deploy the Resemble Enhance worker image and verify the enhanced track on the demo
+   clip. The worker code and CPU stack are in place; the Runpod release still needs the
+   new image.
 2. Replace the gated per-speaker stems with true target-speaker extraction
    (MossFormer2-SS) if the product needs overlapping-speech separation.
 3. Add a language selector/forced language for mixed-language recordings and bake the

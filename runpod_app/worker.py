@@ -31,12 +31,19 @@ MIME_TYPES = {
 }
 
 Denoiser = Callable[[Path, Path], None]
+Enhancer = Callable[[Path, Path, float], None]
 Transcriber = Callable[[Path], Transcript]
 Diarizer = Callable[[Path], list["SpeakerTurn"]]
 Separator = Callable[[Path, Path], tuple[bytes, bytes]]
 
 NEMOTRON_PYTHON = "/opt/nemotron/bin/python"
 NEMOTRON_SCRIPT = "/opt/nemotron/diarize.py"
+RESEMBLE_RUN_DIR = Path(
+    os.getenv(
+        "PARECUT_RESEMBLE_RUN_DIR",
+        "/opt/resemble-enhance/enhancer_stage2",
+    )
+)
 
 _MODEL = None
 _STATE = None
@@ -129,6 +136,49 @@ def _deepfilternet(input_path: Path, output_path: Path) -> None:
     audio, _ = load_audio(str(input_path), sr=state.sr())
     enhanced = enhance(model, state, audio)
     save_audio(str(output_path), enhanced, state.sr())
+
+
+def _resemble_enhance(input_path: Path, output_path: Path, mix: float) -> None:
+    import torch
+    import torchaudio
+    from resemble_enhance.enhancer.inference import enhance
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dry, dry_rate = torchaudio.load(str(input_path))
+    dry = dry.mean(dim=0).to(torch.float32)
+    if dry_rate != 48000:
+        dry = torchaudio.functional.resample(dry, dry_rate, 48000)
+
+    wet, wet_rate = enhance(
+        dwav=dry,
+        sr=48000,
+        device=device,
+        nfe=32,
+        solver="midpoint",
+        lambd=0.5,
+        tau=0.5,
+        run_dir=RESEMBLE_RUN_DIR,
+    )
+    wet = wet.to(torch.float32)
+    if wet_rate != 48000:
+        wet = torchaudio.functional.resample(wet, wet_rate, 48000)
+
+    length = min(wet.numel(), dry.numel())
+    wet = wet[:length]
+    dry = dry[:length]
+    amount = max(0.0, min(1.0, mix))
+    blended = wet * amount + dry * (1.0 - amount)
+    peak = blended.abs().max()
+    if peak > 1.0:
+        blended = blended / peak
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    torchaudio.save(
+        str(output_path),
+        blended.unsqueeze(0),
+        48000,
+        bits_per_sample=16,
+    )
 
 
 def prepare_audio(
@@ -424,6 +474,7 @@ def _artifact_content(
     artifact: dict[str, str],
     source: bytes,
     denoised: bytes | None,
+    enhanced: bytes | None,
     transcript: Transcript,
     plan,
     roles: dict[str, SpeakerRole],
@@ -435,8 +486,14 @@ def _artifact_content(
     kind = artifact["kind"]
     fmt = artifact["format"]
 
-    if kind in {"cleaned_audio", "enhanced_audio"}:
+    if kind == "cleaned_audio":
         return denoised or source
+    if kind == "enhanced_audio":
+        if enhanced is None:
+            raise RuntimeError(
+                "Enhancement is enabled but the enhancer produced no audio"
+            )
+        return enhanced
     if kind == "stem_music":
         return music
     if kind == "stem_dialogue":
@@ -461,7 +518,7 @@ def _artifact_label(artifact: dict[str, str]) -> str:
     if kind == "cleaned_audio":
         return "Denoised Audio (DeepFilterNet3)"
     if kind == "enhanced_audio":
-        return "Denoised Audio (Enhancement pending)"
+        return "Enhanced Audio (Resemble Enhance)"
     if kind == "stem_music":
         return "Music Stem (Demucs)"
     if kind == "stem_dialogue":
@@ -483,6 +540,7 @@ def handler(
     client: httpx.Client | None = None,
     *,
     denoiser: Denoiser | None = None,
+    enhancer: Enhancer | None = None,
     transcriber: Transcriber | None = None,
     diarizer: Diarizer | None = None,
     separator: Separator | None = None,
@@ -507,6 +565,19 @@ def handler(
             denoise=denoise,
         )
         duration = float(data.get("duration_seconds") or _wav_duration(working_wav))
+
+        enhanced: bytes | None = None
+        if config.enhance:
+            enhanced_path = workdir / "enhanced.wav"
+            if enhancer is None:
+                _resemble_enhance(
+                    working_wav,
+                    enhanced_path,
+                    config.enhance_mix,
+                )
+            else:
+                enhancer(working_wav, enhanced_path, config.enhance_mix)
+            enhanced = enhanced_path.read_bytes()
 
         turns: list[SpeakerTurn] = []
         diarization_fallback = False
@@ -567,6 +638,7 @@ def handler(
                 artifact,
                 source,
                 denoised if denoise else None,
+                enhanced,
                 transcript,
                 plan,
                 roles,

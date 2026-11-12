@@ -22,7 +22,7 @@ export const EFFECTS: EffectDefinition[] = [
     label: "Enhance",
     action: "Apply enhancement",
     description:
-      "Neural dereverb and bandwidth restoration. The mix leans the result back toward the original.",
+      "Resemble Enhance restores bandwidth and body and re-synthesizes the voice at 44.1 kHz. CPU runs can take a few minutes.",
     producesAudio: true,
   },
   {

@@ -32,6 +32,8 @@ Implemented:
 - real noise reduction with DeepFilterNet3
 - real music/dialogue separation with Demucs `htdemucs_ft`
 - real transcription with WhisperX 3.3.1 `large-v3-turbo` and English word alignment
+- real enhancement with Resemble Enhance: 44.1 kHz restoration, bandwidth and body
+  extension, a wet/dry mix, and CPU inference
 - real diarization with NVIDIA Nemotron-3-Diarization
 - per-speaker gated stems
 - a speaker-attributed canonical transcript that drives the before/after transcripts
@@ -49,13 +51,12 @@ Implemented:
 
 Still pending:
 
-- Resemble Enhance; `enhanced_audio` currently reuses the denoised audio and is labeled
-  `Denoised Audio (Enhancement pending)`
+- GPU inference; Resemble Enhance, transcription, and separation currently run on CPU
+  torch and are slower than they need to be
 - true target-speaker separation; per-speaker stems are gated from diarization turns
 - language selection/forced language for mixed-language recordings, with matching
   alignment models
 - LLM take selection
-- CUDA inference; the current worker runs CPU torch
 - Redis, Stripe billing, OAuth, and retention
 
 The checked-in `.env.example` keeps the no-credentials local/mock path. The active
@@ -158,9 +159,9 @@ PARECUT-SRS-v2.0.md product requirements
 
 ## Roadmap
 
-1. Resemble Enhance and true target-speaker separation
-2. LLM take selection on top of the deterministic cut rules
-3. CUDA inference for faster long-form processing
+1. GPU inference for Resemble Enhance, WhisperX, Demucs, and diarization
+2. True target-speaker separation
+3. LLM take selection on top of the deterministic cut rules
 4. Redis, billing, OAuth, and retention
 5. A dedicated `parecut-separate` endpoint for heavy separation stages
 
