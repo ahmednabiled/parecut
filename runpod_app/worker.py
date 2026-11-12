@@ -168,9 +168,15 @@ def _resemble_enhance(input_path: Path, output_path: Path, mix: float) -> None:
     dry = dry[:length]
     amount = max(0.0, min(1.0, mix))
     blended = wet * amount + dry * (1.0 - amount)
+
+    dry_rms = torch.sqrt(torch.mean(dry.square()))
+    wet_rms = torch.sqrt(torch.mean(blended.square()))
+    if wet_rms > 1e-6:
+        blended = blended * (dry_rms / wet_rms)
+
     peak = blended.abs().max()
-    if peak > 1.0:
-        blended = blended / peak
+    if peak > 0.99:
+        blended = blended / peak * 0.99
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     torchaudio.save(
