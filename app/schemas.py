@@ -41,6 +41,7 @@ class ArtifactRead(BaseModel):
     size_bytes: int
     download_url: str
     content_url: str
+    peaks_url: str
 
 
 class JobRead(BaseModel):
@@ -50,6 +51,7 @@ class JobRead(BaseModel):
     status: str
     source_filename: str
     source_url: str
+    source_peaks_url: str
     duration_seconds: float | None = None
     sample_rate: int | None = None
     fps: str
@@ -150,6 +152,7 @@ def to_job_read(job, artifacts=()) -> JobRead:
         status=job.status,
         source_filename=job.source_filename,
         source_url=f"/api/jobs/{job.id}/source",
+        source_peaks_url=f"/api/jobs/{job.id}/source/peaks",
         duration_seconds=job.duration_seconds,
         sample_rate=job.sample_rate,
         fps=job.fps,
@@ -169,6 +172,7 @@ def to_job_read(job, artifacts=()) -> JobRead:
                 size_bytes=artifact.size_bytes,
                 download_url=f"/api/jobs/{job.id}/artifacts/{artifact.id}/download",
                 content_url=f"/api/jobs/{job.id}/artifacts/{artifact.id}/content",
+                peaks_url=f"/api/jobs/{job.id}/artifacts/{artifact.id}/peaks",
             )
             for artifact in artifacts
         ],

@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useQueries } from "@tanstack/react-query";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { formatMediaTime } from "../../lib/format";
 import Icon from "../Icon";
 import type { EditorTrack, ProcessingRun } from "./types";
@@ -17,12 +24,65 @@ interface TimelineProps {
   processing: ProcessingRun[];
 }
 
+interface PeaksResponse {
+  peaks: number[];
+}
+
 const TRACK_OFFSET = 36;
 
 function meterDb(level: number): string {
   if (level <= 0.001) return "−∞";
   return Math.max(-48, 20 * Math.log10(level)).toFixed(0);
 }
+
+const Waveform = memo(function Waveform({
+  peaks,
+  muted,
+}: {
+  peaks: number[];
+  muted: boolean;
+}) {
+  if (peaks.length < 2) {
+    return (
+      <div
+        className={`absolute inset-x-0 top-1/2 h-px ${
+          muted ? "bg-outline-variant/40" : "bg-outline-variant"
+        }`}
+      />
+    );
+  }
+
+  const max = Math.max(1e-6, ...peaks);
+  const count = peaks.length;
+  let upper = "";
+  let lower = "";
+
+  for (let index = 0; index < count; index += 1) {
+    const x = (index / (count - 1)) * 1000;
+    const normalized = Math.pow(Math.min(1, peaks[index] / max), 0.72);
+    const y = Math.max(0.7, normalized * 47);
+    upper += `${index === 0 ? "M" : "L"}${x.toFixed(1)},${(50 - y).toFixed(1)} `;
+  }
+  for (let index = count - 1; index >= 0; index -= 1) {
+    const x = (index / (count - 1)) * 1000;
+    const normalized = Math.pow(Math.min(1, peaks[index] / max), 0.72);
+    const y = Math.max(0.7, normalized * 47);
+    lower += `L${x.toFixed(1)},${(50 + y).toFixed(1)} `;
+  }
+
+  return (
+    <svg
+      viewBox="0 0 1000 100"
+      preserveAspectRatio="none"
+      aria-hidden="true"
+      className={`absolute inset-0 h-full w-full ${
+        muted ? "text-on-surface-variant/25" : "text-on-surface-variant/65"
+      }`}
+    >
+      <path d={`${upper}${lower}Z`} fill="currentColor" />
+    </svg>
+  );
+});
 
 export default function Timeline({
   tracks,
@@ -41,6 +101,23 @@ export default function Timeline({
   const playheadRef = useRef<HTMLDivElement | null>(null);
   const scrubbingRef = useRef(false);
   const [scrubbing, setScrubbing] = useState(false);
+
+  const peaksQueries = useQueries({
+    queries: tracks.map((track) => ({
+      queryKey: ["peaks", track.peaksSrc],
+      queryFn: async () => {
+        const response = await fetch(track.peaksSrc, {
+          credentials: "include",
+        });
+        if (!response.ok) throw new Error("Waveform unavailable");
+        return (await response.json()) as PeaksResponse;
+      },
+      staleTime: Infinity,
+    })),
+  });
+  const peaks = tracks.map(
+    (_track, index) => peaksQueries[index]?.data?.peaks ?? [],
+  );
 
   const paintPlayhead = useCallback(() => {
     const element = playheadRef.current;
@@ -129,14 +206,14 @@ export default function Timeline({
           </span>
         </div>
         <p className="text-[12px] text-on-surface-variant">
-          Drag the tracks to scrub. Mute one layer to hear another.
+          Drag the waves to scrub. Mute one layer to hear another.
         </p>
       </div>
 
-      <div className="mt-5 grid min-h-0 gap-4 overscroll-contain lg:grid-cols-[minmax(0,1fr)_64px] xl:flex-1 xl:overflow-y-auto xl:pr-1">
-        <div>
+      <div className="mt-4 flex min-h-0 gap-3 xl:flex-1">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div
-            className="flex justify-between border-b border-outline-variant pb-1 font-mono text-[10px] text-on-surface-variant"
+            className="flex shrink-0 justify-between border-b border-outline-variant pb-1 font-mono text-[10px] text-on-surface-variant"
             style={{ paddingLeft: TRACK_OFFSET }}
           >
             {[0, 0.25, 0.5, 0.75, 1].map((position) => (
@@ -144,80 +221,91 @@ export default function Timeline({
             ))}
           </div>
 
-          <div
-            ref={laneRef}
-            className={`relative mt-2 touch-none select-none ${
-              scrubbing ? "cursor-grabbing" : "cursor-crosshair"
-            }`}
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={endScrub}
-            onPointerCancel={endScrub}
-            onLostPointerCapture={endScrub}
-          >
-            {tracks.map((track, index) => {
-              const groupChanged =
-                index === 0 || tracks[index - 1].group !== track.group;
-              const isMuted = Boolean(muted[track.id]);
-              return (
-                <div key={track.id}>
-                  {groupChanged ? (
-                    <p className="mb-1 mt-3 text-[10px] font-medium uppercase tracking-[0.08em] text-on-surface-variant">
-                      {track.group}
-                    </p>
-                  ) : null}
-                  <div className="flex items-center gap-2 py-1">
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onToggleMute(track.id);
-                      }}
-                      aria-label={`${isMuted ? "Unmute" : "Mute"} ${track.label}`}
-                      className="grid size-7 shrink-0 place-items-center rounded-full text-on-surface-variant transition-colors duration-150 ease-standard hover:bg-surface-container-high hover:text-on-surface"
-                    >
-                      <Icon
-                        name={isMuted ? "volume_off" : "volume_up"}
-                        size={15}
-                      />
-                    </button>
-                    <div
-                      className={`flex h-9 min-w-0 flex-1 items-center justify-between gap-2 rounded border px-2 ${
-                        isMuted
-                          ? "border-outline-variant bg-surface-container-low opacity-45"
-                          : "border-outline bg-surface-container-high"
-                      }`}
-                    >
-                      <span className="truncate text-[12px] font-medium text-on-surface">
-                        {track.label}
-                      </span>
-                      {track.artifact ? (
-                        <a
-                          href={track.artifact.download_url}
-                          download
-                          onClick={(event) => event.stopPropagation()}
-                          aria-label={`Download ${track.label}`}
-                          className="shrink-0 text-on-surface-variant transition-colors duration-150 ease-standard hover:text-on-surface"
-                        >
-                          <Icon name="download" size={14} />
-                        </a>
-                      ) : null}
+          <div className="relative mt-2 h-[20rem] min-h-0 xl:h-auto xl:flex-1">
+            <div
+              ref={laneRef}
+              className={`absolute inset-0 touch-none select-none overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
+                scrubbing ? "cursor-grabbing" : "cursor-crosshair"
+              }`}
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={endScrub}
+              onPointerCancel={endScrub}
+              onLostPointerCapture={endScrub}
+            >
+              {tracks.map((track, index) => {
+                const groupChanged =
+                  index === 0 || tracks[index - 1].group !== track.group;
+                const isMuted = Boolean(muted[track.id]);
+                return (
+                  <div key={track.id}>
+                    {groupChanged ? (
+                      <p className="mb-1 mt-3 text-[10px] font-medium uppercase tracking-[0.08em] text-on-surface-variant first:mt-0">
+                        {track.group}
+                      </p>
+                    ) : null}
+                    <div className="flex items-center gap-2 py-1">
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onToggleMute(track.id);
+                        }}
+                        aria-label={`${isMuted ? "Unmute" : "Mute"} ${track.label}`}
+                        className="grid size-7 shrink-0 place-items-center rounded-full text-on-surface-variant transition-colors duration-150 ease-standard hover:bg-surface-container-high hover:text-on-surface"
+                      >
+                        <Icon
+                          name={isMuted ? "volume_off" : "volume_up"}
+                          size={15}
+                        />
+                      </button>
+                      <div
+                        className={`relative h-10 min-w-0 flex-1 overflow-hidden rounded border ${
+                          isMuted
+                            ? "border-outline-variant bg-surface-container-low"
+                            : "border-outline bg-surface-container-lowest"
+                        }`}
+                      >
+                        <Waveform peaks={peaks[index]} muted={isMuted} />
+                        <div className="pointer-events-none absolute inset-0 flex items-center justify-between gap-2 px-2">
+                          <span
+                            className={`max-w-[78%] truncate rounded bg-surface-container/90 px-1.5 py-0.5 text-[11px] font-medium ${
+                              isMuted
+                                ? "text-on-surface-variant"
+                                : "text-on-surface"
+                            }`}
+                          >
+                            {track.label}
+                          </span>
+                          {track.artifact ? (
+                            <a
+                              href={track.artifact.download_url}
+                              download
+                              onClick={(event) => event.stopPropagation()}
+                              aria-label={`Download ${track.label}`}
+                              className="pointer-events-auto shrink-0 rounded p-0.5 text-on-surface-variant transition-colors duration-150 ease-standard hover:bg-surface-container-high hover:text-on-surface"
+                            >
+                              <Icon name="download" size={14} />
+                            </a>
+                          ) : null}
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
 
-            {processing.map((run) => (
-              <div key={run.id} className="flex items-center gap-2 py-1">
-                <span className="grid size-7 shrink-0 place-items-center">
-                  <span className="spinner" aria-hidden="true" />
-                </span>
-                <div className="flex h-9 flex-1 items-center rounded border border-dashed border-outline-variant bg-surface-container-low px-2 text-[12px] text-on-surface-variant">
-                  Processing {run.label}
+              {processing.map((run) => (
+                <div key={run.id} className="flex items-center gap-2 py-1">
+                  <span className="grid size-7 shrink-0 place-items-center">
+                    <span className="spinner" aria-hidden="true" />
+                  </span>
+                  <div className="flex h-10 flex-1 items-center rounded border border-dashed border-outline-variant bg-surface-container-low px-2 text-[12px] text-on-surface-variant">
+                    Processing {run.label}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
 
             <div
               ref={playheadRef}
@@ -228,11 +316,11 @@ export default function Timeline({
           </div>
         </div>
 
-        <div className="flex flex-col items-center gap-2 border-l border-outline-variant pl-4">
+        <div className="flex w-14 shrink-0 flex-col items-center gap-2 border-l border-outline-variant pl-3">
           <span className="text-[10px] uppercase tracking-[0.08em] text-on-surface-variant">
             Out
           </span>
-          <div className="flex h-44 items-end gap-1.5">
+          <div className="flex min-h-0 flex-1 items-end justify-center gap-1.5 py-1">
             {[levels.left, levels.right].map((level, index) => (
               <div
                 key={index}

@@ -43,8 +43,8 @@ Implemented:
   and `ROUGH-CUT.md`
 - speaker-role switching that regenerates the after-cut transcript and `ROUGH-CUT.md`
 - a non-destructive timeline editor with synchronized multi-track playback, per-track
-  mute, meters, click-and-drag scrubbing, caption editing and downloads, and
-  viewport-filling panes that scroll independently
+  mute, server-generated waveform peaks, click-and-drag scrubbing, caption editing and
+  downloads, and a fixed time ruler and meter rail beside the scrolling track list
 - on-demand effects that run as child jobs and add muted tracks without touching the
   source: noise reduction, enhancement, music separation, speaker separation, and
   transcribe + rough cut
@@ -81,7 +81,9 @@ values are stored on the effect run so the worker applies exactly what was set.
 
 Source and effect audio stream same-origin with HTTP range support, so the browser can
 seek and keep tracks synchronized. Playback and per-track mute use the Web Audio API;
-the side meters read the mixed signal. Captions come from the most recent completed
+the timeline renders waveform peaks from the source and each effect artifact. The time
+ruler and master meter rail are fixed; only the track lanes scroll. The side meters read
+the mixed signal. Captions come from the most recent completed
 transcription run. Word chunking and text corrections are client-side, and the
 corrected SRT downloads from the viewer; the raw VTT and `ROUGH-CUT.md` download from
 the inspector.

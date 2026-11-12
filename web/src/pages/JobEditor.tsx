@@ -95,6 +95,7 @@ function buildTracks(project: Job | null, effects: Job[]): EditorTrack[] {
       id: "original",
       label: "Original audio",
       src: project.source_url,
+      peaksSrc: project.source_peaks_url,
       kind: "original",
       group: "Source",
     },
@@ -106,6 +107,7 @@ function buildTracks(project: Job | null, effects: Job[]): EditorTrack[] {
       id: artifact.id,
       label: artifact.label,
       src: artifact.content_url,
+      peaksSrc: artifact.peaks_url,
       kind: "audio",
       group: "Project files",
       artifact,
@@ -120,6 +122,7 @@ function buildTracks(project: Job | null, effects: Job[]): EditorTrack[] {
         id: artifact.id,
         label: artifact.label,
         src: artifact.content_url,
+        peaksSrc: artifact.peaks_url,
         kind: "audio",
         group: effectLabel(run.effect),
         artifact,
@@ -474,7 +477,7 @@ export default function JobEditor() {
       ) : null}
 
       <div className="mt-4 grid min-h-0 min-w-0 gap-6 xl:flex-1 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,23rem)] xl:overflow-hidden">
-        <div className="flex min-h-0 min-w-0 flex-col gap-6 xl:grid xl:min-h-0 xl:grid-rows-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+        <div className="flex min-h-0 min-w-0 flex-col gap-6 xl:grid xl:min-h-0 xl:grid-rows-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
           <Viewer
             cues={editedCues}
             currentTime={audio.currentTime}

@@ -39,6 +39,9 @@ async def test_draft_project_and_effect_run(app, client):
     assert parent["effect"] is None
     assert parent["artifacts"] == []
     assert parent["source_url"].endswith(f"/api/jobs/{parent['id']}/source")
+    assert parent["source_peaks_url"].endswith(
+        f"/api/jobs/{parent['id']}/source/peaks"
+    )
 
     effects = await client.get(f"/api/jobs/{parent['id']}/effects")
     assert effects.status_code == 200
@@ -84,10 +87,20 @@ async def test_draft_project_and_effect_run(app, client):
         f"bytes 4-7/{len(created['source'])}"
     )
 
+    peaks = await client.get(parent["source_peaks_url"])
+    assert peaks.status_code == 200
+    peak_values = peaks.json()["peaks"]
+    assert 0 < len(peak_values) <= 512
+    assert max(peak_values) > 0
+
     artifact = finished["artifacts"][0]
     content = await client.get(artifact["content_url"])
     assert content.status_code == 200
     assert content.content == created["source"]
+
+    artifact_peaks = await client.get(artifact["peaks_url"])
+    assert artifact_peaks.status_code == 200
+    assert max(artifact_peaks.json()["peaks"]) > 0
 
     partial_content = await client.get(
         artifact["content_url"], headers={"Range": "bytes=-8"}

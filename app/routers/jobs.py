@@ -1,5 +1,9 @@
+import array
+import asyncio
 import json
 import mimetypes
+import subprocess
+import sys
 from collections import defaultdict
 from pathlib import Path
 
@@ -121,6 +125,73 @@ async def media_response(
         media_type=media_type,
         headers=headers,
     )
+
+
+PEAKS_CACHE: dict[tuple[str, int], list[float]] = {}
+PEAKS_CACHE_LIMIT = 256
+
+
+def compute_peaks(data: bytes, points: int) -> list[float]:
+    try:
+        result = subprocess.run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                "pipe:0",
+                "-vn",
+                "-ac",
+                "1",
+                "-ar",
+                "8000",
+                "-f",
+                "s16le",
+                "pipe:1",
+            ],
+            input=data,
+            check=True,
+            capture_output=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Could not decode audio for waveform",
+        ) from exc
+
+    samples = array.array("h")
+    sample_bytes = len(result.stdout) - (len(result.stdout) % 2)
+    samples.frombytes(result.stdout[:sample_bytes])
+    if sys.byteorder != "little":
+        samples.byteswap()
+    if not samples:
+        return []
+
+    bucket = max(1, len(samples) // points)
+    peaks: list[float] = []
+    for start in range(0, len(samples), bucket):
+        chunk = samples[start : start + bucket]
+        peaks.append(min(1.0, max(abs(value) for value in chunk) / 32768.0))
+        if len(peaks) >= points:
+            break
+    return peaks
+
+
+async def peaks_payload(
+    storage: ObjectStorage,
+    key: str,
+    points: int,
+) -> dict[str, list[float]]:
+    cache_key = (key, points)
+    peaks = PEAKS_CACHE.get(cache_key)
+    if peaks is None:
+        data = await storage.get(key)
+        peaks = await asyncio.to_thread(compute_peaks, data, points)
+        PEAKS_CACHE[cache_key] = peaks
+        if len(PEAKS_CACHE) > PEAKS_CACHE_LIMIT:
+            PEAKS_CACHE.pop(next(iter(PEAKS_CACHE)))
+    return {"peaks": peaks}
 
 
 @router.post("", response_model=JobRead, status_code=status.HTTP_201_CREATED)
@@ -267,6 +338,18 @@ async def get_source(
     )
 
 
+@router.get("/{job_id}/source/peaks")
+async def source_peaks(
+    job_id: str,
+    points: int = Query(default=512, ge=64, le=2048),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    storage: ObjectStorage = Depends(get_storage),
+) -> dict[str, list[float]]:
+    job = await load_job(session, user, job_id)
+    return await peaks_payload(storage, job.source_r2_key, points)
+
+
 @router.get("/{job_id}/artifacts/{artifact_id}/content")
 async def artifact_content(
     job_id: str,
@@ -290,6 +373,24 @@ async def artifact_content(
     return await media_response(
         request, storage, artifact.r2_key, media_type, filename
     )
+
+
+@router.get("/{job_id}/artifacts/{artifact_id}/peaks")
+async def artifact_peaks(
+    job_id: str,
+    artifact_id: str,
+    points: int = Query(default=512, ge=64, le=2048),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    storage: ObjectStorage = Depends(get_storage),
+) -> dict[str, list[float]]:
+    job = await load_job(session, user, job_id)
+    artifact = await session.get(JobArtifact, artifact_id)
+    if artifact is None or artifact.job_id != job.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found"
+        )
+    return await peaks_payload(storage, artifact.r2_key, points)
 
 
 @router.patch("/{job_id}/speakers", response_model=JobRead)

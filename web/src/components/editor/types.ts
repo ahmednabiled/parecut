@@ -4,6 +4,7 @@ export interface EditorTrack {
   id: string;
   label: string;
   src: string;
+  peaksSrc: string;
   kind: "original" | "audio";
   group: string;
   artifact?: Artifact;

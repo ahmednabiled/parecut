@@ -71,6 +71,7 @@ export interface Artifact {
   size_bytes: number;
   download_url: string;
   content_url: string;
+  peaks_url: string;
 }
 
 export type EffectName =
@@ -87,6 +88,7 @@ export interface Job {
   status: JobStatus;
   source_filename: string;
   source_url: string;
+  source_peaks_url: string;
   duration_seconds: number | null;
   sample_rate: number | null;
   fps: string;
