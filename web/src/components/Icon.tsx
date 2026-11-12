@@ -11,6 +11,8 @@ import graphicEq from "@material-symbols/svg-400/rounded/graphic_eq.svg";
 import keyboardArrowDown from "@material-symbols/svg-400/rounded/keyboard_arrow_down.svg";
 import keyboardArrowUp from "@material-symbols/svg-400/rounded/keyboard_arrow_up.svg";
 import logout from "@material-symbols/svg-400/rounded/logout.svg";
+import menu from "@material-symbols/svg-400/rounded/menu.svg";
+import menuOpen from "@material-symbols/svg-400/rounded/menu_open.svg";
 import movie from "@material-symbols/svg-400/rounded/movie.svg";
 import pause from "@material-symbols/svg-400/rounded/pause.svg";
 import playArrow from "@material-symbols/svg-400/rounded/play_arrow.svg";
@@ -36,6 +38,8 @@ const ICONS = {
   keyboard_arrow_down: keyboardArrowDown,
   keyboard_arrow_up: keyboardArrowUp,
   logout,
+  menu,
+  menu_open: menuOpen,
   movie,
   pause,
   play_arrow: playArrow,

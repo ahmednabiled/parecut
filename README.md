@@ -50,6 +50,8 @@ Implemented:
   transcribe + rough cut
 - deterministic false-start and same-speaker-retake removal
 - a seeded demo account and a monochrome Material 3 interface
+- a collapsible navigation sidebar on desktop and a drawer on mobile, with the open
+  state persisted
 - FastAPI serving the built SPA with deep-link fallback in production
 
 Still pending:

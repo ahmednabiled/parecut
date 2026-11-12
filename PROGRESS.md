@@ -68,6 +68,9 @@ Complete:
 - FastAPI serves the built SPA with deep-link fallback, static assets, brand files, and
   JSON 404s for unknown `/api` routes
 - Monochrome Material 3 visual system with Google Sans and the Pare Cut script logo
+- Collapsible navigation sidebar: the desktop rail animates to zero width with a
+  floating open button, the mobile version is a drawer with a backdrop, and the desktop
+  state persists in localStorage
 - Backend tests, frontend tests, typecheck, and production build
 - Cloudflare R2 storage adapter behind `ObjectStorage`, verified with real put/get/delete
 - Runpod queue endpoint `parecut-audio` with a full model worker
