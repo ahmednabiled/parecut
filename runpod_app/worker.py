@@ -26,10 +26,19 @@ logger = logging.getLogger("parecut.worker")
 
 MIME_TYPES = {
     "wav": "audio/wav",
+    "mp3": "audio/mpeg",
     "md": "text/markdown",
     "srt": "application/x-subrip",
     "vtt": "text/vtt",
     "json": "application/json",
+}
+
+AUDIO_ARTIFACT_KINDS = {
+    "cleaned_audio",
+    "enhanced_audio",
+    "stem_music",
+    "stem_dialogue",
+    "stem_speaker",
 }
 
 Denoiser = Callable[[Path, Path], None]
@@ -130,6 +139,41 @@ def _convert_to_wav(
 def _wav_duration(path: Path) -> float:
     with wave.open(str(path), "rb") as reader:
         return reader.getnframes() / reader.getframerate()
+
+
+def _encode_audio(content: bytes, workdir: Path, fmt: str, name: str) -> bytes:
+    if fmt == "wav":
+        return content
+    if fmt != "mp3":
+        raise RuntimeError(f"unsupported audio format: {fmt}")
+
+    source = workdir / f"{name}.src"
+    target = workdir / f"{name}.mp3"
+    source.write_bytes(content)
+    try:
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                str(source),
+                "-vn",
+                "-c:a",
+                "libmp3lame",
+                "-b:a",
+                "192k",
+                str(target),
+            ],
+            check=True,
+            capture_output=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        stderr = (exc.stderr or b"").decode("utf-8", "replace")
+        raise RuntimeError(f"mp3 encoding failed: {stderr[-1000:]}") from exc
+    return target.read_bytes()
 
 
 def _get_model():
@@ -982,6 +1026,13 @@ def handler(
             )
             if content is None:
                 continue
+            if artifact["kind"] in AUDIO_ARTIFACT_KINDS:
+                content = _encode_audio(
+                    content,
+                    workdir,
+                    artifact["format"],
+                    Path(artifact["key"]).stem,
+                )
             mime = MIME_TYPES.get(artifact["format"], "application/octet-stream")
             logger.info("uploading %s (%d bytes)", artifact["key"], len(content))
             _upload(client, outputs[artifact["key"]], content, mime)

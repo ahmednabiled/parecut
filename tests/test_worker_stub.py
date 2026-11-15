@@ -12,6 +12,7 @@ from parecut_engine.schemas import (
 from runpod_app.worker import (
     LanguageSegment,
     SpeakerTurn,
+    _encode_audio,
     _merge_language_segments,
     _studio_filter_chain,
     handler,
@@ -104,7 +105,8 @@ def fake_separator(wav_path: Path, workdir: Path) -> tuple[bytes, bytes]:
 
 
 def make_job(config: PipelineConfig | None = None) -> dict:
-    config = config or PipelineConfig()
+    # Most stub tests assert WAV passthrough; format-specific tests opt in.
+    config = config or PipelineConfig(audio_format="wav")
     artifacts = expected_artifacts("job-1", config)
     return {
         "input": {
@@ -133,6 +135,60 @@ def _uploaded(client: FakeClient, job: dict) -> dict[str, bytes]:
 def _frames(data: bytes) -> int:
     with wave.open(io.BytesIO(data)) as reader:
         return reader.getnframes()
+
+
+def test_encode_audio_writes_mp3(tmp_path):
+    encoded = _encode_audio(make_wav(0.5), tmp_path, "mp3", "tone")
+    assert encoded[:3] == b"ID3" or (
+        encoded[0] == 0xFF and (encoded[1] & 0xE0) == 0xE0
+    )
+
+
+def test_encode_audio_passthrough_wav(tmp_path):
+    payload = b"RIFF....WAVE"
+    assert _encode_audio(payload, tmp_path, "wav", "tone") == payload
+
+
+def test_worker_uploads_mp3_when_selected():
+    config = PipelineConfig(
+        audio_format="mp3",
+        separate_music=True,
+        transcribe=False,
+        rough_cut=False,
+    )
+    job = make_job(config)
+    client = FakeClient()
+
+    def real_separator(wav_path: Path, workdir: Path) -> tuple[bytes, bytes]:
+        return make_wav(1.0), make_wav(1.0)
+
+    handler(
+        job,
+        client=client,
+        denoiser=fake_denoiser,
+        enhancer=fake_enhancer,
+        polisher=fake_polisher,
+        transcriber=fake_transcriber,
+        diarizer=fake_diarizer,
+        separator=real_separator,
+    )
+
+    audio_puts = [
+        (content, mime)
+        for _url, content, mime in client.puts
+        if mime.startswith("audio/")
+    ]
+    assert audio_puts
+    assert all(mime == "audio/mpeg" for _content, mime in audio_puts)
+
+    uploaded = _uploaded(client, job)
+    music_key = next(
+        artifact["key"]
+        for artifact in job["input"]["expected_artifacts"]
+        if artifact["kind"] == "stem_music"
+    )
+    music = uploaded[music_key]
+    assert music[:3] == b"ID3" or (music[0] == 0xFF and (music[1] & 0xE0) == 0xE0)
 
 
 def test_worker_runs_real_pipeline_stages():
@@ -278,6 +334,7 @@ def test_enhance_only_runs_after_denoise_and_uses_mix():
         transcribe=False,
         rough_cut=False,
         enhance_mix=0.65,
+        audio_format="wav",
         studio_chain=StudioChain(
             body_db=3.5,
             presence_db=-1.0,
