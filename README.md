@@ -35,7 +35,11 @@ Implemented:
 - mixed-language transcription: choose English/Arabic per run, transcribe once per
   selected language, then merge by script and confidence before speaker assignment
 - real enhancement with Resemble Enhance: 44.1 kHz restoration, bandwidth and body
-  extension, a wet/dry mix, and CPU inference
+  extension, a wet/dry mix, and GPU inference with CPU fallback
+- GPU inference for Resemble Enhance, WhisperX, Demucs, DeepFilterNet, and Nemotron
+  diarization, with a `PARECUT_GPU_STAGES` override for per-stage CPU fallback
+- compressed audio artifacts by default: generated audio is MP3 (192 kbps CBR,
+  `audio/mpeg`), with a per-run **Lossless (WAV)** option in the inspector
 - a configurable studio finishing chain after Resemble: high-pass, body/mud/presence EQ,
   de-esser, compressor, limiter, and loudness normalization in a collapsible panel that
   is collapsed by default and stores its settings on each run
@@ -59,8 +63,6 @@ Implemented:
 
 Still pending:
 
-- GPU inference; Resemble Enhance, transcription, and separation currently run on CPU
-  torch and are slower than they need to be
 - true target-speaker separation; per-speaker stems are gated from diarization turns
 - per-segment language identification or a code-switch-aware ASR model; the current
   mixed-language path runs one pass per selected language and merges the results
