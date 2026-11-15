@@ -68,22 +68,28 @@ export default function Viewer({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <label
-            htmlFor="caption-chunk"
-            className="text-[12px] text-on-surface-variant"
+          <span className="text-[12px] text-on-surface-variant">Words</span>
+          <div
+            role="group"
+            aria-label="Words per caption"
+            className="inline-flex h-8 items-center rounded-full border border-outline-variant bg-surface-container-low p-0.5"
           >
-            Words
-          </label>
-          <select
-            id="caption-chunk"
-            value={chunkWords}
-            onChange={(event) => onChunkWords(Number(event.target.value))}
-            className="h-8 rounded border border-outline bg-transparent px-2 text-[12px] text-on-surface"
-          >
-            <option value={3}>3</option>
-            <option value={5}>5</option>
-            <option value={8}>8</option>
-          </select>
+            {[3, 5, 8].map((count) => (
+              <button
+                key={count}
+                type="button"
+                aria-pressed={chunkWords === count}
+                onClick={() => onChunkWords(count)}
+                className={`h-6 rounded-full px-2.5 font-mono text-[12px] font-medium transition-colors duration-150 ease-standard ${
+                  chunkWords === count
+                    ? "bg-primary text-on-primary"
+                    : "text-on-surface-variant hover:text-on-surface"
+                }`}
+              >
+                {count}
+              </button>
+            ))}
+          </div>
           <button
             type="button"
             onClick={onDownload}

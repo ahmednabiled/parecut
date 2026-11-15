@@ -437,21 +437,26 @@ async def update_speakers(
 async def job_events(
     job_id: str,
     request: Request,
-    user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings_dep),
     broker: EventBroker = Depends(get_broker),
 ):
-    job = await load_job(session, user, job_id)
-    artifacts = (
-        await session.exec(select(JobArtifact).where(JobArtifact.job_id == job.id))
-    ).all()
-    snapshot = to_job_read(job, artifacts).model_dump(mode="json")
+    # Open and close the DB session before returning EventSourceResponse so
+    # long-lived SSE streams do not hold connections from SQLAlchemy's pool.
+    async with request.app.state.sessionmaker() as session:
+        user = await get_current_user(request, session=session, settings=settings)
+        job = await load_job(session, user, job_id)
+        artifacts = (
+            await session.exec(select(JobArtifact).where(JobArtifact.job_id == job.id))
+        ).all()
+        job_status = job.status
+        snapshot = to_job_read(job, artifacts).model_dump(mode="json")
+
     subscription = broker.subscribe(job_id)
 
     async def event_stream():
         try:
             yield {"event": "snapshot", "data": json.dumps(snapshot)}
-            if job.status in {"completed", "failed"}:
+            if job_status in {"completed", "failed"}:
                 return
             async for event in subscription:
                 yield {"event": event.type, "data": event.model_dump_json()}

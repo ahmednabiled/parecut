@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { Link } from "react-router-dom";
+import Icon from "./Icon";
 
 interface AuthLayoutProps {
   title: string;
@@ -15,11 +17,13 @@ export default function AuthLayout({ title, subtitle, children }: AuthLayoutProp
         <section className="hidden flex-col border-r border-outline-variant px-12 py-12 lg:flex">
           <div className="flex flex-1 flex-col justify-center">
             <div className="max-w-[34rem]">
-              <img
-                src="/brand/login-logo.png"
-                alt="Pare Cut"
-                className="mb-10 h-24 w-auto"
-              />
+              <Link to="/" className="mb-10 inline-block">
+                <img
+                  src="/brand/login-logo.png"
+                  alt="Pare Cut"
+                  className="h-24 w-auto"
+                />
+              </Link>
               <h1 className="text-[38px] font-semibold leading-[1.12] tracking-[-0.02em]">
                 Clean audio in.
                 <br />
@@ -49,15 +53,31 @@ export default function AuthLayout({ title, subtitle, children }: AuthLayoutProp
             </div>
           </div>
 
-          <p className="text-[13px] text-on-surface-variant">
-            AI audio engineering and rough-cut preparation.
-          </p>
+          <div className="flex items-center justify-between gap-4 text-[13px] text-on-surface-variant">
+            <p>AI audio engineering and rough-cut preparation.</p>
+            <Link
+              to="/"
+              className="inline-flex items-center gap-1.5 text-on-surface-variant transition-colors duration-150 ease-standard hover:text-on-surface"
+            >
+              <Icon name="arrow_back" size={14} />
+              Overview
+            </Link>
+          </div>
         </section>
 
         <section className="flex items-center justify-center px-6 py-12 sm:px-10">
           <div className="w-full max-w-md">
-            <div className="mb-10 lg:hidden">
-              <img src="/brand/login-logo.png" alt="Pare Cut" className="h-16 w-auto" />
+            <div className="mb-10 flex items-center justify-between lg:hidden">
+              <Link to="/">
+                <img src="/brand/login-logo.png" alt="Pare Cut" className="h-16 w-auto" />
+              </Link>
+              <Link
+                to="/"
+                className="inline-flex items-center gap-1.5 text-[13px] text-on-surface-variant transition-colors duration-150 ease-standard hover:text-on-surface"
+              >
+                <Icon name="arrow_back" size={14} />
+                Overview
+              </Link>
             </div>
 
             <h2 className="text-[32px] font-semibold leading-10 tracking-[-0.02em]">

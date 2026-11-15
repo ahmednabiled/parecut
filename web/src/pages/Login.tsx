@@ -4,10 +4,12 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError, apiFetch } from "../api/client";
 import type { SessionUser } from "../api/types";
 import AuthLayout from "../components/AuthLayout";
+import Icon from "../components/Icon";
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const queryClient = useQueryClient();
@@ -15,14 +17,13 @@ export default function Login() {
   const [params] = useSearchParams();
   const next = params.get("next") || "/";
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
+  async function loginWith(targetEmail: string, targetPassword: string) {
     setError(null);
     setPending(true);
     try {
       const data = await apiFetch<SessionUser>("/api/auth/login", {
         method: "POST",
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: targetEmail, password: targetPassword }),
       });
       queryClient.setQueryData(["me"], data);
       navigate(next, { replace: true });
@@ -31,6 +32,17 @@ export default function Login() {
     } finally {
       setPending(false);
     }
+  }
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    void loginWith(email, password);
+  }
+
+  function signInDemo() {
+    setEmail("demo@parecut.app");
+    setPassword("parecut-demo");
+    void loginWith("demo@parecut.app", "parecut-demo");
   }
 
   return (
@@ -64,15 +76,28 @@ export default function Login() {
           >
             Password
           </label>
-          <input
-            id="password"
-            type="password"
-            required
-            autoComplete="current-password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            className="h-12 w-full rounded border border-outline bg-transparent px-4 text-[15px] text-on-surface transition-[border-color,background-color] duration-150 ease-standard hover:border-on-surface-variant focus:border-on-surface"
-          />
+          <div className="relative">
+            <input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              required
+              autoComplete="current-password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              className="h-12 w-full rounded border border-outline bg-transparent pl-4 pr-11 text-[15px] text-on-surface transition-[border-color,background-color] duration-150 ease-standard hover:border-on-surface-variant focus:border-on-surface"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((current) => !current)}
+              aria-label={showPassword ? "Hide characters" : "Show characters"}
+              className="absolute right-2 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-full text-on-surface-variant transition-colors duration-150 ease-standard hover:bg-surface-container-high hover:text-on-surface"
+            >
+              <Icon
+                name={showPassword ? "visibility_off" : "visibility"}
+                size={18}
+              />
+            </button>
+          </div>
         </div>
 
         {error ? (
@@ -90,6 +115,15 @@ export default function Login() {
           className="h-11 w-full rounded-[20px] bg-primary px-6 text-sm font-semibold text-on-primary transition-colors duration-150 ease-standard hover:bg-[#dcdcdc] active:bg-[#c9c9c9] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {pending ? "Signing in…" : "Sign in"}
+        </button>
+
+        <button
+          type="button"
+          disabled={pending}
+          onClick={signInDemo}
+          className="h-11 w-full rounded-[20px] border border-outline px-6 text-sm font-medium text-on-surface transition-colors duration-150 ease-standard hover:bg-surface-container-high disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Use demo account
         </button>
       </form>
 
