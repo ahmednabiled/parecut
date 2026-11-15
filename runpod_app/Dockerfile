@@ -9,12 +9,12 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg libsndfile1 libgomp1 git \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu \
-    "torch==2.2.2+cpu" "torchaudio==2.2.2+cpu"
+RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu128 \
+    "torch==2.7.1+cu128" "torchaudio==2.7.1+cu128"
 
-RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu \
-    "torch==2.2.2+cpu" \
-    "torchaudio==2.2.2+cpu" \
+RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cu128 \
+    "torch==2.7.1+cu128" \
+    "torchaudio==2.7.1+cu128" \
     "runpod==2.1.0" \
     "httpx==0.28.1" \
     "pydantic>=2" \
@@ -28,6 +28,11 @@ RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/wh
     "pyannote.audio==3.3.2" \
     "demucs==4.1.0" \
     "transformers==4.48.3"
+
+# CTranslate2 loads cuBLAS/cuDNN at runtime from the wheels installed by torch.
+ENV LD_LIBRARY_PATH=/usr/local/lib/python3.11/site-packages/nvidia/cublas/lib:/usr/local/lib/python3.11/site-packages/nvidia/cudnn/lib:/usr/local/lib/python3.11/site-packages/nvidia/cuda_runtime/lib:/usr/local/lib/python3.11/site-packages/nvidia/cufft/lib:/usr/local/lib/python3.11/site-packages/nvidia/curand/lib:/usr/local/lib/python3.11/site-packages/nvidia/cusolver/lib:/usr/local/lib/python3.11/site-packages/nvidia/cusparse/lib:/usr/local/lib/python3.11/site-packages/nvidia/nccl/lib:/usr/local/lib/python3.11/site-packages/nvidia/nvrtc/lib
+
+RUN python -c "import torch; print('torch', torch.__version__, 'cuda', torch.version.cuda); print('arch', torch.cuda.get_arch_list())"
 
 # DeepFilterNet pins packaging<24, which conflicts with runpod's
 # packaging>=26.3. Its runtime code does not use that pin, so skip dependency
@@ -126,17 +131,17 @@ import whisperx
 whisperx.load_align_model(language_code="en", device="cpu")
 PY
 
-# Nemotron-3-Diarization needs torch 2.6+/transformers 5.x. Keep it in a
-# separate venv so DeepFilterNet, WhisperX, and Demucs stay on torch 2.2.2.
-RUN python -m venv /opt/nemotron
-RUN /opt/nemotron/bin/pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu \
-    "torch==2.6.0+cpu" "torchaudio==2.6.0+cpu"
+# Nemotron-3-Diarization needs transformers 5.x. Keep it in a venv so the
+# main stack keeps its transformers pin, but share the CUDA torch build from
+# the system environment instead of installing a second copy.
+RUN python -m venv --system-site-packages /opt/nemotron
 RUN /opt/nemotron/bin/pip install --no-cache-dir \
     "transformers==5.22.1" \
     "numpy<2" \
     "soundfile==0.14.0" \
     "librosa" \
     "accelerate"
+RUN /opt/nemotron/bin/python -c "import torch, transformers; print('nemotron torch', torch.__version__, 'transformers', transformers.__version__)"
 COPY runpod_app/nemotron_diarize.py /opt/nemotron/diarize.py
 
 RUN python - <<'PY'

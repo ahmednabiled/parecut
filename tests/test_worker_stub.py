@@ -12,7 +12,9 @@ from parecut_engine.schemas import (
 from runpod_app.worker import (
     LanguageSegment,
     SpeakerTurn,
+    _device_for,
     _encode_audio,
+    _gpu_stages,
     _merge_language_segments,
     _studio_filter_chain,
     handler,
@@ -135,6 +137,21 @@ def _uploaded(client: FakeClient, job: dict) -> dict[str, bytes]:
 def _frames(data: bytes) -> int:
     with wave.open(io.BytesIO(data)) as reader:
         return reader.getnframes()
+
+
+def test_gpu_stages_defaults_to_all(monkeypatch):
+    monkeypatch.delenv("PARECUT_GPU_STAGES", raising=False)
+    assert _gpu_stages() is None
+
+
+def test_gpu_stages_reads_csv(monkeypatch):
+    monkeypatch.setenv("PARECUT_GPU_STAGES", "enhance,separate_music")
+    assert _gpu_stages() == {"enhance", "separate_music"}
+
+
+def test_device_for_disabled_stage_is_cpu(monkeypatch):
+    monkeypatch.setenv("PARECUT_GPU_STAGES", "enhance")
+    assert _device_for("separate_music") == "cpu"
 
 
 def test_encode_audio_writes_mp3(tmp_path):

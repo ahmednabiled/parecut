@@ -63,6 +63,7 @@ _WHISPER_MODEL = None
 _RAW_WHISPER_MODEL = None
 _ALIGN_MODELS: dict[str, tuple[Any, Any]] = {}
 _DEMUCS_MODEL = None
+_DEVICE_LOG: set[str] = set()
 
 
 @dataclass
@@ -80,6 +81,40 @@ class LanguageSegment:
     text: str
     confidence: float
     words: list[tuple[float, float, str]]
+
+
+def _gpu_stages() -> set[str] | None:
+    raw = os.getenv("PARECUT_GPU_STAGES", "all").strip().lower()
+    if raw in {"", "all", "*"}:
+        return None
+    if raw in {"none", "cpu", "off"}:
+        return set()
+    return {part.strip() for part in raw.split(",") if part.strip()}
+
+
+def _stage_allows_gpu(stage: str) -> bool:
+    stages = _gpu_stages()
+    return stages is None or stage in stages
+
+
+def _device_for(stage: str) -> str:
+    if not _stage_allows_gpu(stage):
+        device = "cpu"
+    else:
+        try:
+            import torch
+
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        except Exception:
+            device = "cpu"
+    if stage not in _DEVICE_LOG:
+        _DEVICE_LOG.add(stage)
+        logger.info("%s device=%s", stage, device)
+    return device
+
+
+def _compute_type_for(stage: str) -> str:
+    return "float16" if _device_for(stage) == "cuda" else "int8"
 
 
 def _progress(job: dict, stage: str, percent: int) -> None:
@@ -201,7 +236,7 @@ def _resemble_enhance(input_path: Path, output_path: Path, mix: float) -> None:
     import torchaudio
     from resemble_enhance.enhancer.inference import enhance
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = _device_for("enhance")
     dry, dry_rate = torchaudio.load(str(input_path))
     dry = dry.mean(dim=0).to(torch.float32)
     if dry_rate != 48000:
@@ -355,8 +390,8 @@ def _get_whisper_model():
         logger.info("loading WhisperX large-v3-turbo")
         _WHISPER_MODEL = whisperx.load_model(
             "large-v3-turbo",
-            device="cpu",
-            compute_type="int8",
+            device=_device_for("transcribe"),
+            compute_type=_compute_type_for("transcribe"),
             download_root="/root/.cache/whisperx",
         )
         logger.info("WhisperX ready")
@@ -371,8 +406,8 @@ def _get_raw_whisper_model():
         logger.info("loading faster-whisper word-timestamp model")
         _RAW_WHISPER_MODEL = WhisperModel(
             "large-v3-turbo",
-            device="cpu",
-            compute_type="int8",
+            device=_device_for("transcribe"),
+            compute_type=_compute_type_for("transcribe"),
             download_root="/root/.cache/whisperx",
             local_files_only=True,
         )
@@ -387,7 +422,7 @@ def _get_align_model(language: str) -> tuple[Any, Any]:
         logger.info("loading alignment model for %s", language)
         _ALIGN_MODELS[language] = whisperx.load_align_model(
             language_code=language,
-            device="cpu",
+            device=_device_for("transcribe"),
         )
         logger.info("alignment model ready for %s", language)
     return _ALIGN_MODELS[language]
@@ -552,7 +587,7 @@ def _transcribe_language(
                 align_model,
                 metadata,
                 audio,
-                device="cpu",
+                device=_device_for("transcribe"),
                 return_char_alignments=False,
             )
             aligned_segments = aligned.get("segments", segments)
@@ -715,6 +750,10 @@ def diarize_audio(
                 capture_output=True,
                 text=True,
                 timeout=900,
+                env={
+                    **os.environ,
+                    "PARECUT_NEMOTRON_DEVICE": _device_for("diarize"),
+                },
             )
         except subprocess.CalledProcessError as exc:
             stderr = (exc.stderr or "")[-1000:]
@@ -784,7 +823,12 @@ def separate_music(
     )
     ref = wav.mean(0)
     wav = (wav - ref.mean()) / (ref.std() + 1e-8)
-    sources = apply_model(model, wav[None], device="cpu", progress=False)[0]
+    sources = apply_model(
+        model,
+        wav[None],
+        device=_device_for("separate_music"),
+        progress=False,
+    )[0]
     sources = sources * ref.std() + ref.mean()
 
     music = sources[0] + sources[1] + sources[2]
