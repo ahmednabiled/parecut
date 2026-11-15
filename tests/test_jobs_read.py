@@ -1,7 +1,12 @@
 from httpx import ASGITransport, AsyncClient
 
 from app.models import JobArtifact
+from app.routers.jobs import CONTENT_MEDIA_TYPES
 from tests.helpers import make_wav, register, upload
+
+
+def test_mp3_artifacts_are_served_as_audio_mpeg():
+    assert CONTENT_MEDIA_TYPES["mp3"] == "audio/mpeg"
 
 
 async def _create_job(client) -> dict:

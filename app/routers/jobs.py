@@ -48,6 +48,7 @@ TEXT_MEDIA_TYPES = {
 CONTENT_MEDIA_TYPES = {
     **TEXT_MEDIA_TYPES,
     "wav": "audio/wav",
+    "mp3": "audio/mpeg",
 }
 
 
