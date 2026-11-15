@@ -66,7 +66,7 @@ RUN pip install --no-cache-dir --no-deps "resemble-enhance==0.0.1"
 # the CI runner does not have. Install it with Triton hidden, disable its Triton
 # path permanently, then restore the Triton build torch expects.
 RUN pip uninstall -y triton \
-    && pip install --no-cache-dir --no-deps "deepspeed==0.12.4" \
+    && pip install --no-cache-dir --no-deps "deepspeed==0.18.9" \
     && sed -i 's/^    HAS_TRITON = True$/    HAS_TRITON = False/' \
         /usr/local/lib/python3.11/site-packages/deepspeed/__init__.py \
     && pip install --no-cache-dir "triton==3.3.1" \
@@ -74,7 +74,7 @@ RUN pip uninstall -y triton \
         "hjson" \
         "ninja" \
         "py-cpuinfo" \
-        "pynvml" \
+        "nvidia-ml-py" \
         "librosa==0.10.1" \
         "resampy==0.4.2"
 
