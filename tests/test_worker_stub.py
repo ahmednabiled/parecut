@@ -1,6 +1,9 @@
 import io
+import subprocess
 import wave
 from pathlib import Path
+
+import pytest
 
 from app.services.runpod import expected_artifacts
 from parecut_engine.schemas import (
@@ -12,7 +15,11 @@ from parecut_engine.schemas import (
 from runpod_app.worker import (
     LanguageSegment,
     SpeakerTurn,
+    _device_for,
+    _encode_audio,
+    _gpu_stages,
     _merge_language_segments,
+    _stage_allows_gpu,
     _studio_filter_chain,
     handler,
     transcribe_languages,
@@ -104,7 +111,8 @@ def fake_separator(wav_path: Path, workdir: Path) -> tuple[bytes, bytes]:
 
 
 def make_job(config: PipelineConfig | None = None) -> dict:
-    config = config or PipelineConfig()
+    # Most stub tests assert WAV passthrough; format-specific tests opt in.
+    config = config or PipelineConfig(audio_format="wav")
     artifacts = expected_artifacts("job-1", config)
     return {
         "input": {
@@ -133,6 +141,126 @@ def _uploaded(client: FakeClient, job: dict) -> dict[str, bytes]:
 def _frames(data: bytes) -> int:
     with wave.open(io.BytesIO(data)) as reader:
         return reader.getnframes()
+
+
+def test_gpu_stages_defaults_to_all(monkeypatch):
+    monkeypatch.delenv("PARECUT_GPU_STAGES", raising=False)
+    assert _gpu_stages() is None
+
+
+def test_gpu_stages_reads_csv(monkeypatch):
+    monkeypatch.setenv("PARECUT_GPU_STAGES", "enhance,separate_music")
+    assert _gpu_stages() == {"enhance", "separate_music"}
+
+
+def test_device_for_disabled_stage_is_cpu(monkeypatch):
+    monkeypatch.setenv("PARECUT_GPU_STAGES", "enhance")
+    assert _device_for("separate_music") == "cpu"
+
+
+def test_diarize_follows_transcribe_stage(monkeypatch):
+    monkeypatch.setenv("PARECUT_GPU_STAGES", "transcribe")
+    assert _stage_allows_gpu("diarize") is True
+
+
+def test_diarize_is_excluded_when_its_stages_are(monkeypatch):
+    monkeypatch.setenv("PARECUT_GPU_STAGES", "enhance")
+    assert _stage_allows_gpu("diarize") is False
+
+
+def test_encode_audio_failure_raises(tmp_path, monkeypatch):
+    def fail(*args, **kwargs):
+        raise subprocess.CalledProcessError(1, "ffmpeg", stderr=b"boom")
+
+    monkeypatch.setattr("runpod_app.worker.subprocess.run", fail)
+    with pytest.raises(RuntimeError, match="mp3 encoding failed"):
+        _encode_audio(make_wav(0.5), tmp_path, "mp3", "tone")
+
+
+def test_handler_uploads_nothing_when_encoding_fails(monkeypatch):
+    job = make_job(
+        PipelineConfig(
+            audio_format="wav",
+            noise_reduction=True,
+            enhance=False,
+            separate_music=False,
+            separate_speakers=False,
+            transcribe=False,
+            rough_cut=False,
+        )
+    )
+    job["input"]["expected_artifacts"] = [
+        artifact
+        for artifact in job["input"]["expected_artifacts"]
+        if artifact["kind"] == "cleaned_audio"
+    ]
+    job["input"]["outputs"] = {
+        artifact["key"]: f"https://upload.example/{index}"
+        for index, artifact in enumerate(job["input"]["expected_artifacts"])
+    }
+    client = FakeClient()
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("mp3 encoding failed")
+
+    monkeypatch.setattr("runpod_app.worker._encode_audio", fail)
+    with pytest.raises(RuntimeError, match="mp3 encoding failed"):
+        handler(job, client=client, denoiser=fake_denoiser)
+    assert client.puts == []
+
+
+def test_encode_audio_writes_mp3(tmp_path):
+    encoded = _encode_audio(make_wav(0.5), tmp_path, "mp3", "tone")
+    assert encoded[:3] == b"ID3" or (
+        encoded[0] == 0xFF and (encoded[1] & 0xE0) == 0xE0
+    )
+
+
+def test_encode_audio_passthrough_wav(tmp_path):
+    payload = b"RIFF....WAVE"
+    assert _encode_audio(payload, tmp_path, "wav", "tone") == payload
+
+
+def test_worker_uploads_mp3_when_selected():
+    config = PipelineConfig(
+        audio_format="mp3",
+        separate_music=True,
+        transcribe=False,
+        rough_cut=False,
+    )
+    job = make_job(config)
+    client = FakeClient()
+
+    def real_separator(wav_path: Path, workdir: Path) -> tuple[bytes, bytes]:
+        return make_wav(1.0), make_wav(1.0)
+
+    handler(
+        job,
+        client=client,
+        denoiser=fake_denoiser,
+        enhancer=fake_enhancer,
+        polisher=fake_polisher,
+        transcriber=fake_transcriber,
+        diarizer=fake_diarizer,
+        separator=real_separator,
+    )
+
+    audio_puts = [
+        (content, mime)
+        for _url, content, mime in client.puts
+        if mime.startswith("audio/")
+    ]
+    assert audio_puts
+    assert all(mime == "audio/mpeg" for _content, mime in audio_puts)
+
+    uploaded = _uploaded(client, job)
+    music_key = next(
+        artifact["key"]
+        for artifact in job["input"]["expected_artifacts"]
+        if artifact["kind"] == "stem_music"
+    )
+    music = uploaded[music_key]
+    assert music[:3] == b"ID3" or (music[0] == 0xFF and (music[1] & 0xE0) == 0xE0)
 
 
 def test_worker_runs_real_pipeline_stages():
@@ -278,6 +406,7 @@ def test_enhance_only_runs_after_denoise_and_uses_mix():
         transcribe=False,
         rough_cut=False,
         enhance_mix=0.65,
+        audio_format="wav",
         studio_chain=StudioChain(
             body_db=3.5,
             presence_db=-1.0,

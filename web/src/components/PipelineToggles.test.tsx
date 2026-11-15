@@ -15,6 +15,7 @@ const complete: PipelineConfig = {
   transcribe: true,
   rough_cut: true,
   transcription_languages: DEFAULT_LANGUAGES,
+  audio_format: "mp3",
 };
 
 describe("PipelineToggles", () => {

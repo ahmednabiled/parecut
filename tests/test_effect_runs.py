@@ -157,6 +157,19 @@ async def test_transcribe_effect_stores_languages(app, client):
     assert child["pipeline_config"]["transcription_languages"] == ["en", "ar"]
 
 
+async def test_enhance_effect_stores_audio_format(app, client):
+    created = await _draft_job(client)
+    parent = created["job"]
+
+    response = await client.post(
+        f"/api/jobs/{parent['id']}/effects",
+        json={"effect": "enhance", "audio_format": "wav"},
+    )
+    assert response.status_code == 201, response.text
+    child = response.json()
+    assert child["pipeline_config"]["audio_format"] == "wav"
+
+
 async def test_effect_run_requires_credits_and_project_parent(app, client):
     created = await _draft_job(client)
     parent = created["job"]

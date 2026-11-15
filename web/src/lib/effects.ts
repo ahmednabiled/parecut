@@ -1,4 +1,5 @@
 import type {
+  AudioFormat,
   EffectName,
   Job,
   StudioChain,
@@ -6,6 +7,12 @@ import type {
 } from "../api/types";
 
 export const DEFAULT_LANGUAGES: TranscriptionLanguage[] = ["en"];
+export const DEFAULT_AUDIO_FORMAT: AudioFormat = "mp3";
+
+export const AUDIO_FORMATS: { code: AudioFormat; label: string }[] = [
+  { code: "mp3", label: "Standard (MP3)" },
+  { code: "wav", label: "Lossless (WAV)" },
+];
 
 export const TRANSCRIPTION_LANGUAGES: {
   code: TranscriptionLanguage;

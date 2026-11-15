@@ -9,12 +9,17 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg libsndfile1 libgomp1 git \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu \
-    "torch==2.2.2+cpu" "torchaudio==2.2.2+cpu"
+RUN ffmpeg -hide_banner -loglevel error -f lavfi \
+    -i "sine=frequency=440:duration=0.1" -c:a libmp3lame -b:a 192k \
+    -y /tmp/mp3_smoke.mp3 \
+    && test -s /tmp/mp3_smoke.mp3
 
-RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu \
-    "torch==2.2.2+cpu" \
-    "torchaudio==2.2.2+cpu" \
+RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu128 \
+    "torch==2.7.1+cu128" "torchaudio==2.7.1+cu128"
+
+RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cu128 \
+    "torch==2.7.1+cu128" \
+    "torchaudio==2.7.1+cu128" \
     "runpod==2.1.0" \
     "httpx==0.28.1" \
     "pydantic>=2" \
@@ -28,6 +33,18 @@ RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/wh
     "pyannote.audio==3.3.2" \
     "demucs==4.1.0" \
     "transformers==4.48.3"
+
+# CTranslate2 loads cuBLAS/cuDNN at runtime from the wheels installed by torch.
+ENV LD_LIBRARY_PATH=/usr/local/lib/python3.11/site-packages/nvidia/cublas/lib:/usr/local/lib/python3.11/site-packages/nvidia/cudnn/lib:/usr/local/lib/python3.11/site-packages/nvidia/cuda_runtime/lib:/usr/local/lib/python3.11/site-packages/nvidia/cufft/lib:/usr/local/lib/python3.11/site-packages/nvidia/curand/lib:/usr/local/lib/python3.11/site-packages/nvidia/cusolver/lib:/usr/local/lib/python3.11/site-packages/nvidia/cusparse/lib:/usr/local/lib/python3.11/site-packages/nvidia/nccl/lib:/usr/local/lib/python3.11/site-packages/nvidia/nvrtc/lib
+
+RUN python - <<'PY'
+import torch
+
+arch = torch.cuda.get_arch_list()
+print("torch", torch.__version__, "cuda", torch.version.cuda, "arch", arch)
+assert torch.version.cuda, "a CUDA torch build is required"
+assert "sm_120" in arch, f"sm_120 kernels missing from torch build: {arch}"
+PY
 
 # DeepFilterNet pins packaging<24, which conflicts with runpod's
 # packaging>=26.3. Its runtime code does not use that pin, so skip dependency
@@ -116,8 +133,9 @@ get_model("htdemucs_ft")
 PY
 
 # WhisperX 3.3.1 pins ctranslate2<4.5, but 4.4/4.5 fail on newer glibc with
-# "cannot enable executable stack". 4.6.0 works with faster-whisper 1.1.0.
-RUN pip install --no-cache-dir --no-deps "ctranslate2==4.6.0"
+# "cannot enable executable stack". 4.6.3 works with faster-whisper 1.1.0 and
+# ships Blackwell (sm_120) kernels plus CUDA 12.8 runtime support.
+RUN pip install --no-cache-dir --no-deps "ctranslate2==4.6.3"
 RUN python -c "import ctranslate2, whisperx; print('ctranslate2', ctranslate2.__version__)"
 
 RUN python - <<'PY'
@@ -126,17 +144,25 @@ import whisperx
 whisperx.load_align_model(language_code="en", device="cpu")
 PY
 
-# Nemotron-3-Diarization needs torch 2.6+/transformers 5.x. Keep it in a
-# separate venv so DeepFilterNet, WhisperX, and Demucs stay on torch 2.2.2.
-RUN python -m venv /opt/nemotron
-RUN /opt/nemotron/bin/pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu \
-    "torch==2.6.0+cpu" "torchaudio==2.6.0+cpu"
+# Nemotron-3-Diarization needs transformers 5.x. Keep it in a venv so the
+# main stack keeps its transformers pin, but share the CUDA torch build from
+# the system environment instead of installing a second copy.
+RUN python -m venv --system-site-packages /opt/nemotron
 RUN /opt/nemotron/bin/pip install --no-cache-dir \
     "transformers==5.22.1" \
     "numpy<2" \
     "soundfile==0.14.0" \
     "librosa" \
     "accelerate"
+RUN /opt/nemotron/bin/python - <<'PY'
+import torch
+import transformers
+
+arch = torch.cuda.get_arch_list()
+print("nemotron torch", torch.__version__, "transformers", transformers.__version__)
+assert torch.version.cuda, "Nemotron must share the CUDA torch build"
+assert "sm_120" in arch, f"sm_120 kernels missing from torch build: {arch}"
+PY
 COPY runpod_app/nemotron_diarize.py /opt/nemotron/diarize.py
 
 RUN python - <<'PY'

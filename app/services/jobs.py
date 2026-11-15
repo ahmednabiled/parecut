@@ -9,7 +9,12 @@ from app.schemas import EffectCreate, EffectName, JobCreate
 from app.services.credits import add_ledger_entry, reserve_minutes
 from app.services.stages import initial_stage_states
 from app.storage import ObjectStorage
-from parecut_engine.schemas import PipelineConfig, StudioChain, TranscriptionLanguage
+from parecut_engine.schemas import (
+    AudioFormat,
+    PipelineConfig,
+    StudioChain,
+    TranscriptionLanguage,
+)
 
 DRAFT_CONFIG = PipelineConfig(
     noise_reduction=False,
@@ -26,8 +31,11 @@ def effect_config(
     enhance_mix: float | None = None,
     studio: StudioChain | None = None,
     languages: list[TranscriptionLanguage] | None = None,
+    audio_format: AudioFormat | None = None,
 ) -> PipelineConfig:
     values = DRAFT_CONFIG.model_dump()
+    if audio_format is not None:
+        values["audio_format"] = audio_format
     if effect == "noise_reduction":
         values["noise_reduction"] = True
     elif effect == "enhance":
@@ -177,7 +185,13 @@ async def create_effect_run(
     if available < minutes:
         raise InsufficientCredits(minutes, available)
 
-    config = effect_config(data.effect, data.enhance_mix, data.studio, data.languages)
+    config = effect_config(
+        data.effect,
+        data.enhance_mix,
+        data.studio,
+        data.languages,
+        data.audio_format,
+    )
     job = Job(
         user_id=user.id,
         parent_job_id=parent.id,

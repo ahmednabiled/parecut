@@ -20,6 +20,15 @@ def test_enhance_mix_is_bounded():
         PipelineConfig(enhance_mix=1.5)
 
 
+def test_pipeline_audio_format_defaults_to_mp3():
+    assert PipelineConfig().audio_format == "mp3"
+
+
+def test_pipeline_audio_format_rejects_unknown():
+    with pytest.raises(ValidationError):
+        PipelineConfig(audio_format="flac")
+
+
 def test_job_event_has_timestamp():
     event = JobEvent(type="stage.progress", job_id="j1", stage="enhance", percent=50)
     assert event.at.tzinfo is not None

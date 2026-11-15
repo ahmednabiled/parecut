@@ -71,18 +71,23 @@ class HttpRunpodClient:
         await self._client.aclose()
 
 
+def _audio_filename(filename: str, audio_format: str) -> str:
+    return f"{filename.rsplit('.', 1)[0]}.{audio_format}"
+
+
 def expected_artifacts(job_id: str, config: PipelineConfig) -> list[dict[str, str]]:
     artifacts: list[dict[str, str]] = []
+    audio_format = config.audio_format
     for stage in enabled_stages(config):
         if stage == "separate_speakers":
             continue
         for filename, kind, label in AUDIO_ARTIFACTS.get(stage, []):
             artifacts.append(
                 {
-                    "key": f"jobs/{job_id}/{filename}",
+                    "key": f"jobs/{job_id}/{_audio_filename(filename, audio_format)}",
                     "kind": kind,
                     "label": label.removeprefix("Demo — "),
-                    "format": "wav",
+                    "format": audio_format,
                 }
             )
 
@@ -90,10 +95,12 @@ def expected_artifacts(job_id: str, config: PipelineConfig) -> list[dict[str, st
         for index in range(1, 9):
             artifacts.append(
                 {
-                    "key": f"jobs/{job_id}/speaker_{index:02d}.wav",
+                    "key": (
+                        f"jobs/{job_id}/speaker_{index:02d}.{audio_format}"
+                    ),
                     "kind": "stem_speaker",
                     "label": f"Speaker {index:02d}",
-                    "format": "wav",
+                    "format": audio_format,
                 }
             )
 

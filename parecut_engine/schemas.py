@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 SpeakerRole = Literal["presenter", "feeder", "cohost"]
 TranscriptionLanguage = Literal["en", "ar"]
+AudioFormat = Literal["mp3", "wav"]
 StageName = Literal[
     "noise_reduction",
     "enhance",
@@ -42,6 +43,7 @@ class PipelineConfig(BaseModel):
     transcription_languages: list[TranscriptionLanguage] = Field(
         default_factory=lambda: ["en"]
     )
+    audio_format: AudioFormat = "mp3"
 
     @field_validator("transcription_languages")
     @classmethod

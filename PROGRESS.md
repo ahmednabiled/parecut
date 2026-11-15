@@ -98,6 +98,23 @@ Complete:
 - Real enhancement with Resemble Enhance: the worker denoises with DeepFilterNet3,
   restores and extends the voice at 44.1 kHz, blends it with the denoised input using
   `enhance_mix`, and labels the track `Studio Enhanced Audio (Resemble Enhance)`
+- GPU inference with CPU fallback: the image uses CUDA PyTorch 2.7.1 (cu128), which
+  covers Blackwell sm_120 and older Ampere/Ada cards. Resemble Enhance, WhisperX,
+  faster-whisper, alignment, DeepFilterNet, and Nemotron diarization select the GPU when
+  present. `PARECUT_GPU_STAGES` (comma list, default `all`) can force individual stages
+  back to CPU without rebuilding the image: valid keys are `noise_reduction`,
+  `enhance`, `separate_music`, and `transcribe`; diarization follows `transcribe` or
+  `separate_speakers` (and also accepts `diarize`). DeepFilterNet is pinned to CPU when
+  `noise_reduction` is excluded.
+- Compressed artifacts by default: generated audio (`cleaned_audio`, `enhanced_audio`,
+  `stem_music`, `stem_dialogue`, `stem_speaker`) is encoded to MP3, 192 kbps CBR, and
+  served as `audio/mpeg`. The inspector's **Generated audio** control offers
+  **Standard (MP3)** and **Lossless (WAV)**; the choice is stored on each effect run.
+  Original uploads are never re-encoded, and older WAV artifacts still play.
+- Rollout order matters: deploy the new worker image while the API still requests WAV,
+  then deploy the API/UI that defaults to MP3. An old worker cannot serve an MP3 request
+  (it would upload WAV bytes under `.mp3` keys), so roll the API back before rolling a
+  worker back.
 - Configurable studio finishing chain after Resemble: high-pass, body/mud/presence EQ,
   de-esser, compressor, limiter, and EBU R128 loudness normalization. The controls live
   in a collapsible Studio polish panel that is collapsed by default; settings are stored
@@ -105,8 +122,6 @@ Complete:
 
 Pending:
 
-- GPU inference for Resemble Enhance, transcription, separation, and diarization; the
-  current worker runs CPU torch
 - Per-segment language identification or a code-switch-aware model; the current
   two-pass merge can still pick one language inside a single mixed-language segment
 - Additional languages beyond English/Arabic
@@ -202,9 +217,9 @@ Worker image:
   processed jobs, and uploaded artifacts to R2.
 - The image bakes DeepFilterNet3, Resemble Enhance, WhisperX `large-v3-turbo`, the
   English alignment model, Demucs `htdemucs_ft`, and NVIDIA Nemotron-3-Diarization.
-- Nemotron runs in a separate `/opt/nemotron` venv with Python 3.11, torch 2.6.0, and
-  transformers 5.22.1. The main worker stays on torch 2.2.2 so DeepFilterNet and
-  WhisperX remain stable.
+- Nemotron runs in a separate `/opt/nemotron` venv with Python 3.11 and
+  `transformers==5.22.1`. The venv is created with `--system-site-packages` and shares
+  the main CUDA torch 2.7.1 build instead of installing a second copy.
 - `pyannote.audio` remains in the main venv only because WhisperX uses it for VAD;
   speaker diarization is Nemotron.
 - Use a new `sha-<short>` release for each worker change. The `dev` tag is mutable, so
@@ -235,23 +250,26 @@ Current worker:
   three EQ bands, de-esser, compressor, limiter, and loudness normalization. The
   settings are stored per effect run and default to the current studio preset.
 - The image uses Python 3.11 because `deepfilterlib` has no Python 3.12 wheel.
-  It installs `ffmpeg`, `git`, `libsndfile1`, CPU torch/torchaudio 2.2.2, `soundfile`,
-  `whisperx==3.3.1`, `pyannote.audio==3.3.2` (WhisperX VAD), `demucs==4.1.0`, and
-  `transformers==4.48.3`.
+  It installs `ffmpeg`, `git`, `libsndfile1`, CUDA torch/torchaudio 2.7.1+cu128,
+  `soundfile`, `whisperx==3.3.1`, `pyannote.audio==3.3.2` (WhisperX VAD),
+  `demucs==4.1.0`, and `transformers==4.48.3`.
 - `resemble-enhance==0.0.1` is installed with `--no-deps`; the missing inference
   dependencies are installed explicitly (`deepspeed==0.12.4`, `librosa==0.10.1`,
   `resampy==0.4.2`). The image's existing pandas, matplotlib, omegaconf, rich, and
   tabulate versions are kept.
-- The `/opt/nemotron` venv installs torch/torchaudio 2.6.0, `transformers==5.22.1`,
-  `numpy<2`, `soundfile`, `librosa`, and `accelerate`.
-- CTranslate2 is overridden to 4.6.0 after the WhisperX install: 4.4/4.5 fail on newer
-  glibc with "cannot enable executable stack", while 4.6 works with faster-whisper 1.1.0.
+- The `/opt/nemotron` venv shares the system torch and installs
+  `transformers==5.22.1`, `numpy<2`, `soundfile`, `librosa`, and `accelerate`.
+- CTranslate2 is overridden to 4.6.3 after the WhisperX install: 4.4/4.5 fail on newer
+  glibc with "cannot enable executable stack", 4.6.0 predates Blackwell support, and
+  4.6.3 adds sm_120 kernels and CUDA 12.8 while remaining compatible with
+  faster-whisper 1.1.0.
 - DeepFilterNet is installed with `--no-deps` because its `packaging<24` pin conflicts
   with `runpod`'s `packaging>=26.3`.
 - All model weights are baked into the image. Runtime uses `HF_HUB_OFFLINE=1` and
   `TRANSFORMERS_OFFLINE=1`.
-- Inference is CPU-only in the current worker. Short clips take roughly 1-2 minutes;
-  long recordings will be slower until the image is moved to CUDA torch.
+- Inference uses the worker GPU when available and falls back to CPU. Each model logs
+  its chosen device on first load. `PARECUT_GPU_STAGES` can force stages back to CPU
+  (for example `enhance,separate_music`) without rebuilding the image.
 - Worker progress updates still cause problems in Runpod. They are disabled by default;
   set `PARECUT_WORKER_PROGRESS=1` only after implementing them with a timeout or a safer
   progress mechanism.
@@ -531,8 +549,7 @@ The progress file itself adds one more documentation commit after these.
    remove silence, feeder lines, restart false starts, and same-speaker retakes.
 5. Create `parecut-separate`; publish a new `sha-<short>` worker release for each change.
 6. Optional: add R2 CORS if direct browser uploads should replace the FastAPI proxy.
-7. Consider CUDA torch for faster inference; the current worker is CPU-only.
-8. Add Redis, Stripe, OAuth, and retention.
+7. Add Redis, Stripe, OAuth, and retention.
 
 ## Non-negotiables
 

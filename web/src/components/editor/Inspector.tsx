@@ -1,11 +1,14 @@
 import { useId, useEffect, useState } from "react";
 import type {
+  AudioFormat,
   EffectName,
   Job,
   StudioChain,
   TranscriptionLanguage,
 } from "../../api/types";
 import {
+  AUDIO_FORMATS,
+  DEFAULT_AUDIO_FORMAT,
   DEFAULT_LANGUAGES,
   DEFAULT_STUDIO,
   EFFECTS,
@@ -30,6 +33,7 @@ interface InspectorProps {
     enhanceMix?: number,
     studio?: StudioChain,
     languages?: TranscriptionLanguage[],
+    audioFormat?: AudioFormat,
   ) => void;
   error: string | null;
   shortfall: Shortfall | null;
@@ -39,6 +43,7 @@ interface InspectorProps {
   defaultMix: number;
   defaultStudio: StudioChain;
   defaultLanguages: TranscriptionLanguage[];
+  defaultAudioFormat: AudioFormat;
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -494,6 +499,7 @@ export default function Inspector({
   defaultMix,
   defaultStudio,
   defaultLanguages,
+  defaultAudioFormat,
 }: InspectorProps) {
   const [mix, setMix] = useState(() =>
     Math.max(0, Math.min(100, Math.round(defaultMix * 100))),
@@ -509,6 +515,9 @@ export default function Inspector({
     );
     return initial.length > 0 ? initial : DEFAULT_LANGUAGES;
   });
+  const [audioFormat, setAudioFormat] = useState<AudioFormat>(
+    defaultAudioFormat ?? DEFAULT_AUDIO_FORMAT,
+  );
 
   function toggleLanguage(language: TranscriptionLanguage) {
     setLanguages((current) => {
@@ -528,6 +537,17 @@ export default function Inspector({
       setLanguages(next);
     }
   }, [lastTranscribe?.id]);
+
+  const lastAudioRun = [...effects].reverse().find((run) => {
+    const definition = EFFECTS.find((item) => item.name === run.effect);
+    return definition?.producesAudio;
+  });
+  useEffect(() => {
+    const next = lastAudioRun?.pipeline_config.audio_format;
+    if (next === "mp3" || next === "wav") {
+      setAudioFormat(next);
+    }
+  }, [lastAudioRun?.id]);
 
   const srt = transcriptJob?.artifacts.find(
     (artifact) =>
@@ -572,6 +592,38 @@ export default function Inspector({
           </p>
         ) : null}
 
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2.5">
+          <div className="min-w-0">
+            <p className="text-[12px] font-medium text-on-surface">
+              Generated audio
+            </p>
+            <p className="mt-0.5 text-[11px] leading-4 text-on-surface-variant">
+              MP3 is small and streams fast. WAV is lossless and larger.
+            </p>
+          </div>
+          <div
+            role="group"
+            aria-label="Generated audio format"
+            className="inline-flex h-8 shrink-0 items-center rounded-full border border-outline-variant p-0.5"
+          >
+            {AUDIO_FORMATS.map(({ code, label }) => (
+              <button
+                key={code}
+                type="button"
+                aria-pressed={audioFormat === code}
+                onClick={() => setAudioFormat(code)}
+                className={`h-6 rounded-full px-2.5 text-[11px] font-medium transition-colors duration-150 ease-standard ${
+                  audioFormat === code
+                    ? "bg-primary text-on-primary"
+                    : "text-on-surface-variant hover:text-on-surface"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="mt-5">
           {EFFECTS.map((definition) => {
             const run = latestRun(effects, definition.name);
@@ -598,6 +650,7 @@ export default function Inspector({
                     enhanceMix,
                     studioSettings,
                     languageSettings,
+                    definition.producesAudio ? audioFormat : undefined,
                   )
                 }
               />
