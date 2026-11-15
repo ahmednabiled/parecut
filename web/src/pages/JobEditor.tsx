@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router-dom";
 import { ApiError, apiFetch } from "../api/client";
 import type {
   Artifact,
+  AudioFormat,
   EffectName,
   Job,
   StudioChain,
@@ -25,6 +26,7 @@ import {
 } from "../lib/captions";
 import {
   AUDIO_KINDS,
+  DEFAULT_AUDIO_FORMAT,
   DEFAULT_LANGUAGES,
   DEFAULT_STUDIO,
   effectLabel,
@@ -270,6 +272,7 @@ export default function JobEditor() {
       enhanceMix?: number;
       studio?: StudioChain;
       languages?: TranscriptionLanguage[];
+      audioFormat?: AudioFormat;
     }) => {
       const payload: Record<string, unknown> = { effect: variables.effect };
       if (variables.enhanceMix !== undefined) {
@@ -280,6 +283,9 @@ export default function JobEditor() {
       }
       if (variables.languages !== undefined) {
         payload.languages = variables.languages;
+      }
+      if (variables.audioFormat !== undefined) {
+        payload.audio_format = variables.audioFormat;
       }
       return apiFetch<Job>(`/api/jobs/${id}/effects`, {
         method: "POST",
@@ -324,10 +330,11 @@ export default function JobEditor() {
       enhanceMix?: number,
       studio?: StudioChain,
       languages?: TranscriptionLanguage[],
+      audioFormat?: AudioFormat,
     ) => {
       setApplyError(null);
       setShortfall(null);
-      applyMutation.mutate({ effect, enhanceMix, studio, languages });
+      applyMutation.mutate({ effect, enhanceMix, studio, languages, audioFormat });
     },
     [applyMutation],
   );
@@ -537,6 +544,9 @@ export default function JobEditor() {
           defaultLanguages={
             project.pipeline_config.transcription_languages ??
             DEFAULT_LANGUAGES
+          }
+          defaultAudioFormat={
+            project.pipeline_config.audio_format ?? DEFAULT_AUDIO_FORMAT
           }
         />
       </div>

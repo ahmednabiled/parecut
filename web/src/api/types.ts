@@ -47,6 +47,7 @@ export interface PipelineConfig {
   transcribe: boolean;
   rough_cut: boolean;
   transcription_languages: TranscriptionLanguage[];
+  audio_format: AudioFormat;
 }
 
 export interface StudioChain {
@@ -83,6 +84,7 @@ export type EffectName =
   | "transcribe";
 
 export type TranscriptionLanguage = "en" | "ar";
+export type AudioFormat = "mp3" | "wav";
 
 export interface Job {
   id: string;
