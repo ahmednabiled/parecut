@@ -6,8 +6,12 @@ from sqlmodel import select
 from app.config import Settings
 from app.main import create_app
 from app.models import CreditLedger, Job, JobArtifact
-from app.services.runpod import HttpRunpodClient, RunpodPipelineRunner
-from parecut_engine.schemas import JobEvent
+from app.services.runpod import (
+    HttpRunpodClient,
+    RunpodPipelineRunner,
+    expected_artifacts,
+)
+from parecut_engine.schemas import JobEvent, PipelineConfig
 from tests.helpers import make_wav, register, upload
 
 
@@ -42,6 +46,42 @@ class FakeRunpodClient:
         return self.statuses.pop(0)
 
 
+def test_expected_artifacts_default_to_mp3():
+    config = PipelineConfig(
+        separate_music=True, transcribe=False, rough_cut=False
+    )
+    artifacts = expected_artifacts("job-1", config)
+    music = next(a for a in artifacts if a["kind"] == "stem_music")
+    assert music["key"].endswith(".mp3")
+    assert music["format"] == "mp3"
+
+
+def test_expected_artifacts_honor_wav():
+    config = PipelineConfig(
+        separate_music=True,
+        transcribe=False,
+        rough_cut=False,
+        audio_format="wav",
+    )
+    artifacts = expected_artifacts("job-1", config)
+    music = next(a for a in artifacts if a["kind"] == "stem_music")
+    assert music["key"].endswith(".wav")
+    assert music["format"] == "wav"
+
+
+def test_expected_speaker_artifacts_use_selected_format():
+    config = PipelineConfig(
+        separate_speakers=True,
+        transcribe=False,
+        rough_cut=False,
+        audio_format="mp3",
+    )
+    artifacts = expected_artifacts("job-1", config)
+    speaker = next(a for a in artifacts if a["kind"] == "stem_speaker")
+    assert speaker["key"].endswith(".mp3")
+    assert speaker["format"] == "mp3"
+
+
 async def _create_job(app, client, pipeline: dict | None = None) -> dict:
     await register(client)
     key = await upload(client, make_wav(2))
@@ -73,7 +113,7 @@ def _runner(app, *, broker=None, runpod):
 
 async def test_runner_submits_job_and_records_artifacts(app, client):
     job = await _create_job(app, client)
-    output_key = f"jobs/{job['id']}/01_cleaned.wav"
+    output_key = f"jobs/{job['id']}/01_cleaned.mp3"
     runpod = FakeRunpodClient(
         [
             {
@@ -84,7 +124,7 @@ async def test_runner_submits_job_and_records_artifacts(app, client):
                         {
                             "kind": "cleaned_audio",
                             "label": "Cleaned Audio",
-                            "format": "wav",
+                            "format": "mp3",
                             "key": output_key,
                             "size_bytes": 12,
                         }
