@@ -121,8 +121,9 @@ get_model("htdemucs_ft")
 PY
 
 # WhisperX 3.3.1 pins ctranslate2<4.5, but 4.4/4.5 fail on newer glibc with
-# "cannot enable executable stack". 4.6.0 works with faster-whisper 1.1.0.
-RUN pip install --no-cache-dir --no-deps "ctranslate2==4.6.0"
+# "cannot enable executable stack". 4.6.3 works with faster-whisper 1.1.0 and
+# ships Blackwell (sm_120) kernels plus CUDA 12.8 runtime support.
+RUN pip install --no-cache-dir --no-deps "ctranslate2==4.6.3"
 RUN python -c "import ctranslate2, whisperx; print('ctranslate2', ctranslate2.__version__)"
 
 RUN python - <<'PY'
