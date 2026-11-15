@@ -40,10 +40,9 @@ ENV LD_LIBRARY_PATH=/usr/local/lib/python3.11/site-packages/nvidia/cublas/lib:/u
 RUN python - <<'PY'
 import torch
 
-arch = torch.cuda.get_arch_list()
-print("torch", torch.__version__, "cuda", torch.version.cuda, "arch", arch)
+print("torch", torch.__version__, "cuda", torch.version.cuda)
 assert torch.version.cuda, "a CUDA torch build is required"
-assert "sm_120" in arch, f"sm_120 kernels missing from torch build: {arch}"
+assert "+cu128" in torch.__version__, f"expected a cu128 wheel, got {torch.__version__}"
 PY
 
 # DeepFilterNet pins packaging<24, which conflicts with runpod's
@@ -158,10 +157,9 @@ RUN /opt/nemotron/bin/python - <<'PY'
 import torch
 import transformers
 
-arch = torch.cuda.get_arch_list()
 print("nemotron torch", torch.__version__, "transformers", transformers.__version__)
 assert torch.version.cuda, "Nemotron must share the CUDA torch build"
-assert "sm_120" in arch, f"sm_120 kernels missing from torch build: {arch}"
+assert "+cu128" in torch.__version__, f"expected a cu128 wheel, got {torch.__version__}"
 PY
 COPY runpod_app/nemotron_diarize.py /opt/nemotron/diarize.py
 

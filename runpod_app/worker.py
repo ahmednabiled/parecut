@@ -111,6 +111,9 @@ def _device_for(stage: str) -> str:
             import torch
 
             device = "cuda" if torch.cuda.is_available() else "cpu"
+            if device == "cuda" and "cuda_arch" not in _DEVICE_LOG:
+                _DEVICE_LOG.add("cuda_arch")
+                logger.info("cuda arch=%s", torch.cuda.get_arch_list())
         except Exception:
             device = "cpu"
     if stage not in _DEVICE_LOG:
