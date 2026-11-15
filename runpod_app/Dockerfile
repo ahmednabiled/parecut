@@ -3,6 +3,10 @@ FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1
 ENV PIP_NO_CACHE_DIR=1
+# DeepSpeed is only imported by Resemble Enhance's training module in this image.
+# Keep it from compiling CUDA ops or probing for a driver during the image build.
+ENV DS_ACCELERATOR=cpu
+ENV DS_BUILD_OPS=0
 WORKDIR /worker
 
 RUN apt-get update \
