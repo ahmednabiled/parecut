@@ -3,9 +3,10 @@ FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1
 ENV PIP_NO_CACHE_DIR=1
+# Resemble Enhance and pyannote load known checkpoints with older torch.load
+# semantics; torch 2.6+ defaults to weights_only=True.
+ENV TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1
 # DeepSpeed is only imported by Resemble Enhance's training module in this image.
-# Keep it from compiling CUDA ops or probing for a driver during the image build.
-ENV DS_ACCELERATOR=cpu
 ENV DS_BUILD_OPS=0
 WORKDIR /worker
 
@@ -60,10 +61,30 @@ RUN pip install --no-cache-dir --no-deps "deepfilternet==0.5.6"
 # runtime dependencies explicitly. pandas, matplotlib, omegaconf, rich, and
 # tabulate are already present from the main image stack.
 RUN pip install --no-cache-dir --no-deps "resemble-enhance==0.0.1"
-RUN pip install --no-cache-dir \
-    "deepspeed==0.12.4" \
-    "librosa==0.10.1" \
-    "resampy==0.4.2"
+
+# DeepSpeed imports Triton while building metadata, which requires a GPU driver
+# the CI runner does not have. Install it with Triton hidden, disable its Triton
+# path permanently, then restore the Triton build torch expects.
+RUN pip uninstall -y triton \
+    && pip install --no-cache-dir --no-deps "deepspeed==0.12.4" \
+    && sed -i 's/^    HAS_TRITON = True$/    HAS_TRITON = False/' \
+        /usr/local/lib/python3.11/site-packages/deepspeed/__init__.py \
+    && pip install --no-cache-dir "triton==3.3.1" \
+    && pip install --no-cache-dir \
+        "hjson" \
+        "ninja" \
+        "py-cpuinfo" \
+        "pynvml" \
+        "librosa==0.10.1" \
+        "resampy==0.4.2"
+
+RUN python - <<'PY'
+import deepspeed
+from resemble_enhance.enhancer.inference import enhance  # noqa: F401
+
+print("resemble import ok; deepspeed HAS_TRITON", deepspeed.HAS_TRITON)
+assert deepspeed.HAS_TRITON is False
+PY
 
 # Bake model weights into the image so workers do not download them on every
 # cold start.
