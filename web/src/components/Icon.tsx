@@ -1,5 +1,6 @@
 import add from "@material-symbols/svg-400/rounded/add.svg";
 import arrowBack from "@material-symbols/svg-400/rounded/arrow_back.svg";
+import arrowForward from "@material-symbols/svg-400/rounded/arrow_forward.svg";
 import audioFile from "@material-symbols/svg-400/rounded/audio_file.svg";
 import check from "@material-symbols/svg-400/rounded/check.svg";
 import close from "@material-symbols/svg-400/rounded/close.svg";
@@ -17,9 +18,12 @@ import movie from "@material-symbols/svg-400/rounded/movie.svg";
 import pause from "@material-symbols/svg-400/rounded/pause.svg";
 import playArrow from "@material-symbols/svg-400/rounded/play_arrow.svg";
 import restartAlt from "@material-symbols/svg-400/rounded/restart_alt.svg";
+import search from "@material-symbols/svg-400/rounded/search.svg";
 import settings from "@material-symbols/svg-400/rounded/settings.svg";
 import tune from "@material-symbols/svg-400/rounded/tune.svg";
 import upload from "@material-symbols/svg-400/rounded/upload.svg";
+import visibility from "@material-symbols/svg-400/rounded/visibility.svg";
+import visibilityOff from "@material-symbols/svg-400/rounded/visibility_off.svg";
 import volumeOff from "@material-symbols/svg-400/rounded/volume_off.svg";
 import volumeUp from "@material-symbols/svg-400/rounded/volume_up.svg";
 import type { CSSProperties } from "react";
@@ -27,6 +31,7 @@ import type { CSSProperties } from "react";
 const ICONS = {
   add,
   arrow_back: arrowBack,
+  arrow_forward: arrowForward,
   audio_file: audioFile,
   check,
   close,
@@ -44,9 +49,12 @@ const ICONS = {
   pause,
   play_arrow: playArrow,
   restart_alt: restartAlt,
+  search,
   settings,
   tune,
   upload,
+  visibility,
+  visibility_off: visibilityOff,
   volume_off: volumeOff,
   volume_up: volumeUp,
 };

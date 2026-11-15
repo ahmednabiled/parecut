@@ -4,11 +4,13 @@ import { Link, useNavigate } from "react-router-dom";
 import { ApiError, apiFetch } from "../api/client";
 import type { SessionUser } from "../api/types";
 import AuthLayout from "../components/AuthLayout";
+import Icon from "../components/Icon";
 
 export default function Register() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const queryClient = useQueryClient();
@@ -85,16 +87,29 @@ export default function Register() {
           >
             Password
           </label>
-          <input
-            id="password"
-            type="password"
-            required
-            minLength={8}
-            autoComplete="new-password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            className="h-12 w-full rounded border border-outline bg-transparent px-4 text-[15px] text-on-surface transition-[border-color,background-color] duration-150 ease-standard hover:border-on-surface-variant focus:border-on-surface"
-          />
+          <div className="relative">
+            <input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              required
+              minLength={8}
+              autoComplete="new-password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              className="h-12 w-full rounded border border-outline bg-transparent pl-4 pr-11 text-[15px] text-on-surface transition-[border-color,background-color] duration-150 ease-standard hover:border-on-surface-variant focus:border-on-surface"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((current) => !current)}
+              aria-label={showPassword ? "Hide characters" : "Show characters"}
+              className="absolute right-2 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-full text-on-surface-variant transition-colors duration-150 ease-standard hover:bg-surface-container-high hover:text-on-surface"
+            >
+              <Icon
+                name={showPassword ? "visibility_off" : "visibility"}
+                size={18}
+              />
+            </button>
+          </div>
           <p className="mt-2 text-xs text-on-surface-variant">At least 8 characters.</p>
         </div>
 

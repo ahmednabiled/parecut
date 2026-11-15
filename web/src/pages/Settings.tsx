@@ -34,6 +34,25 @@ export default function Settings() {
     setPad(data.profile.default_silence_pad_ms);
   }, [profileQuery.data]);
 
+  const saved = profileQuery.data;
+  const isDirty = Boolean(
+    saved &&
+      (fullName !== saved.user.full_name ||
+        fps !== saved.profile.default_fps ||
+        mix !== saved.profile.default_enhance_mix ||
+        pad !== saved.profile.default_silence_pad_ms),
+  );
+
+  function reset() {
+    if (!saved) return;
+    setFullName(saved.user.full_name);
+    setFps(saved.profile.default_fps);
+    setMix(saved.profile.default_enhance_mix);
+    setPad(saved.profile.default_silence_pad_ms);
+    setNotice(null);
+    setError(null);
+  }
+
   async function save(event: FormEvent) {
     event.preventDefault();
     setSaving(true);
@@ -103,7 +122,7 @@ export default function Settings() {
                 id="fps"
                 value={fps}
                 onChange={(event) => setFps(event.target.value)}
-                className={fieldClass}
+                className="h-12 w-full rounded border border-outline bg-surface-container-low px-4 text-[15px] text-on-surface transition-[border-color,background-color] duration-150 ease-standard hover:border-on-surface-variant focus:border-on-surface"
               >
                 {FPS_OPTIONS.map((option) => (
                   <option key={option} value={option}>
@@ -132,6 +151,10 @@ export default function Settings() {
                 onChange={(event) => setMix(Number(event.target.value))}
                 className="mt-3 w-full accent-primary"
               />
+              <div className="mt-1 flex justify-between font-mono text-[11px] text-on-surface-variant">
+                <span>0% · Dry</span>
+                <span>100% · Restored</span>
+              </div>
             </div>
 
             <div className="mt-6">
@@ -163,13 +186,30 @@ export default function Settings() {
           </p>
         ) : null}
 
-        <button
-          type="submit"
-          disabled={saving || profileQuery.isPending}
-          className="mt-6 h-10 rounded-[20px] bg-primary px-5 text-sm font-semibold text-on-primary transition-colors duration-150 ease-standard hover:bg-[#dcdcdc] active:bg-[#c9c9c9] disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {saving ? "Saving…" : "Save settings"}
-        </button>
+        <div className="mt-6 flex flex-wrap items-center gap-3">
+          <button
+            type="submit"
+            disabled={saving || profileQuery.isPending}
+            className="h-10 rounded-[20px] bg-primary px-5 text-sm font-semibold text-on-primary transition-colors duration-150 ease-standard hover:bg-[#dcdcdc] active:bg-[#c9c9c9] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {saving ? "Saving…" : "Save settings"}
+          </button>
+          {isDirty ? (
+            <>
+              <button
+                type="button"
+                onClick={reset}
+                disabled={saving}
+                className="h-10 rounded-[20px] border border-outline px-4 text-sm font-medium text-on-surface transition-colors duration-150 ease-standard hover:bg-surface-container-high disabled:opacity-50"
+              >
+                Reset
+              </button>
+              <span className="text-[12px] text-on-surface-variant">
+                Unsaved changes
+              </span>
+            </>
+          ) : null}
+        </div>
       </form>
     </div>
   );

@@ -32,6 +32,20 @@ html {
   background: var(--color-surface);
 }
 
+select {
+  color-scheme: dark;
+}
+
+select option {
+  background-color: var(--color-surface-container);
+  color: var(--color-on-surface);
+}
+
+select option:checked {
+  background-color: var(--color-surface-container-highest);
+  color: var(--color-on-surface);
+}
+
 body {
   margin: 0;
   font-family: var(--font-sans);
@@ -57,6 +71,23 @@ body {
   to {
     transform: rotate(360deg);
   }
+}
+
+@keyframes parecut-flow {
+  to {
+    stroke-dashoffset: -160;
+  }
+}
+
+.animate-signal-flow {
+  stroke-dasharray: 14 146;
+  animation: parecut-flow 3.2s linear infinite;
+}
+
+.animate-signal-flow-delayed {
+  stroke-dasharray: 14 146;
+  animation: parecut-flow 3.2s linear infinite;
+  animation-delay: -1.6s;
 }
 
 .spinner {
@@ -197,6 +228,56 @@ body {
   margin: 1.25rem 0;
   border: 0;
   border-top: 1px solid var(--color-outline-variant);
+}
+
+@keyframes parecut-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-stack-marquee {
+  animation: parecut-marquee 28s linear infinite;
+  will-change: transform;
+}
+
+.animate-stack-marquee:hover {
+  animation-play-state: paused;
+}
+
+@keyframes parecut-arrow-nudge {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(3.5px);
+  }
+}
+
+.animate-arrow-nudge {
+  animation: parecut-arrow-nudge 1.8s ease-in-out infinite;
+  will-change: transform;
+}
+
+@keyframes parecut-mist-drift {
+  0%,
+  100% {
+    opacity: 0.65;
+    transform: translate3d(-3%, 0, 0) scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: translate3d(3%, -6px, 0) scale(1.06);
+  }
+}
+
+.animate-hero-mist {
+  animation: parecut-mist-drift 9s ease-in-out infinite;
+  will-change: transform, opacity;
 }
 
 @media (prefers-reduced-motion: reduce) {

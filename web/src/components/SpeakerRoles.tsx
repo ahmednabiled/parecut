@@ -10,7 +10,7 @@ const ROLE_OPTIONS: { value: SpeakerRole; label: string }[] = [
 ];
 
 const fieldClass =
-  "h-11 w-full min-w-0 rounded border border-outline bg-transparent px-3 text-sm text-on-surface transition-[border-color,background-color] duration-150 ease-standard hover:border-on-surface-variant focus:border-on-surface disabled:cursor-not-allowed disabled:opacity-50";
+  "h-11 w-full min-w-0 rounded border border-outline bg-surface-container-low px-3 text-sm text-on-surface transition-[border-color,background-color] duration-150 ease-standard hover:border-on-surface-variant focus:border-on-surface disabled:cursor-not-allowed disabled:opacity-50";
 
 export default function SpeakerRoles({
   job,

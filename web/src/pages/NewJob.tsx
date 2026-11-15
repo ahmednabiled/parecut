@@ -9,9 +9,6 @@ import { readAudioDuration, validateUploadFile } from "../lib/audio";
 
 const FPS_OPTIONS = ["24", "25", "29.97", "30", "60"];
 
-const fieldClass =
-  "h-12 w-full rounded border border-outline bg-transparent px-4 text-[15px] text-on-surface transition-[border-color,background-color] duration-150 ease-standard hover:border-on-surface-variant focus:border-on-surface";
-
 function putFile(
   xhr: XMLHttpRequest,
   url: string,
@@ -266,7 +263,7 @@ export default function NewJob() {
               value={fps}
               disabled={submitting}
               onChange={(event) => setFps(event.target.value)}
-              className={fieldClass}
+              className="h-12 w-full rounded border border-outline bg-surface-container-low px-4 text-[15px] text-on-surface transition-[border-color,background-color] duration-150 ease-standard hover:border-on-surface-variant focus:border-on-surface"
             >
               {FPS_OPTIONS.map((option) => (
                 <option key={option} value={option}>
