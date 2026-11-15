@@ -9,6 +9,11 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg libsndfile1 libgomp1 git \
     && rm -rf /var/lib/apt/lists/*
 
+RUN ffmpeg -hide_banner -loglevel error -f lavfi \
+    -i "sine=frequency=440:duration=0.1" -c:a libmp3lame -b:a 192k \
+    -y /tmp/mp3_smoke.mp3 \
+    && test -s /tmp/mp3_smoke.mp3
+
 RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu128 \
     "torch==2.7.1+cu128" "torchaudio==2.7.1+cu128"
 
@@ -32,7 +37,14 @@ RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/wh
 # CTranslate2 loads cuBLAS/cuDNN at runtime from the wheels installed by torch.
 ENV LD_LIBRARY_PATH=/usr/local/lib/python3.11/site-packages/nvidia/cublas/lib:/usr/local/lib/python3.11/site-packages/nvidia/cudnn/lib:/usr/local/lib/python3.11/site-packages/nvidia/cuda_runtime/lib:/usr/local/lib/python3.11/site-packages/nvidia/cufft/lib:/usr/local/lib/python3.11/site-packages/nvidia/curand/lib:/usr/local/lib/python3.11/site-packages/nvidia/cusolver/lib:/usr/local/lib/python3.11/site-packages/nvidia/cusparse/lib:/usr/local/lib/python3.11/site-packages/nvidia/nccl/lib:/usr/local/lib/python3.11/site-packages/nvidia/nvrtc/lib
 
-RUN python -c "import torch; print('torch', torch.__version__, 'cuda', torch.version.cuda); print('arch', torch.cuda.get_arch_list())"
+RUN python - <<'PY'
+import torch
+
+arch = torch.cuda.get_arch_list()
+print("torch", torch.__version__, "cuda", torch.version.cuda, "arch", arch)
+assert torch.version.cuda, "a CUDA torch build is required"
+assert "sm_120" in arch, f"sm_120 kernels missing from torch build: {arch}"
+PY
 
 # DeepFilterNet pins packaging<24, which conflicts with runpod's
 # packaging>=26.3. Its runtime code does not use that pin, so skip dependency
@@ -142,7 +154,15 @@ RUN /opt/nemotron/bin/pip install --no-cache-dir \
     "soundfile==0.14.0" \
     "librosa" \
     "accelerate"
-RUN /opt/nemotron/bin/python -c "import torch, transformers; print('nemotron torch', torch.__version__, 'transformers', transformers.__version__)"
+RUN /opt/nemotron/bin/python - <<'PY'
+import torch
+import transformers
+
+arch = torch.cuda.get_arch_list()
+print("nemotron torch", torch.__version__, "transformers", transformers.__version__)
+assert torch.version.cuda, "Nemotron must share the CUDA torch build"
+assert "sm_120" in arch, f"sm_120 kernels missing from torch build: {arch}"
+PY
 COPY runpod_app/nemotron_diarize.py /opt/nemotron/diarize.py
 
 RUN python - <<'PY'

@@ -37,7 +37,9 @@ Implemented:
 - real enhancement with Resemble Enhance: 44.1 kHz restoration, bandwidth and body
   extension, a wet/dry mix, and GPU inference with CPU fallback
 - GPU inference for Resemble Enhance, WhisperX, Demucs, DeepFilterNet, and Nemotron
-  diarization, with a `PARECUT_GPU_STAGES` override for per-stage CPU fallback
+  diarization, with a `PARECUT_GPU_STAGES` override (`noise_reduction`, `enhance`,
+  `separate_music`, `transcribe`; diarization follows `transcribe`/`separate_speakers`)
+  for per-stage CPU fallback
 - compressed audio artifacts by default: generated audio is MP3 (192 kbps CBR,
   `audio/mpeg`), with a per-run **Lossless (WAV)** option in the inspector
 - a configurable studio finishing chain after Resemble: high-pass, body/mud/presence EQ,

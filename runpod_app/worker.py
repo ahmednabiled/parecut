@@ -94,7 +94,13 @@ def _gpu_stages() -> set[str] | None:
 
 def _stage_allows_gpu(stage: str) -> bool:
     stages = _gpu_stages()
-    return stages is None or stage in stages
+    if stages is None:
+        return True
+    if stage in stages:
+        return True
+    if stage in {"diarize", "diarization"}:
+        return bool(stages & {"transcribe", "separate_speakers"})
+    return False
 
 
 def _device_for(stage: str) -> str:
@@ -205,15 +211,33 @@ def _encode_audio(content: bytes, workdir: Path, fmt: str, name: str) -> bytes:
             check=True,
             capture_output=True,
         )
-    except subprocess.CalledProcessError as exc:
-        stderr = (exc.stderr or b"").decode("utf-8", "replace")
-        raise RuntimeError(f"mp3 encoding failed: {stderr[-1000:]}") from exc
+    except (subprocess.CalledProcessError, OSError) as exc:
+        stderr = getattr(exc, "stderr", None)
+        detail = (
+            (stderr or b"").decode("utf-8", "replace")
+            if stderr
+            else str(exc)
+        )
+        raise RuntimeError(f"mp3 encoding failed: {detail[-1000:]}") from exc
     return target.read_bytes()
 
 
 def _get_model():
     global _MODEL, _STATE
     if _MODEL is None or _STATE is None:
+        if not _stage_allows_gpu("noise_reduction"):
+            # DeepFilterNet picks its own device; pin it before the model loads.
+            import df.enhance as df_enhance
+            import df.modules as df_modules
+
+            df_enhance.get_device = lambda: "cpu"
+            df_modules.get_device = lambda: "cpu"
+            if "noise_reduction" not in _DEVICE_LOG:
+                _DEVICE_LOG.add("noise_reduction")
+                logger.info("noise_reduction device=cpu")
+        else:
+            _device_for("noise_reduction")
+
         from df.enhance import init_df
 
         logger.info("loading DeepFilterNet3")

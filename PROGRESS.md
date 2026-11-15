@@ -102,12 +102,19 @@ Complete:
   covers Blackwell sm_120 and older Ampere/Ada cards. Resemble Enhance, WhisperX,
   faster-whisper, alignment, DeepFilterNet, and Nemotron diarization select the GPU when
   present. `PARECUT_GPU_STAGES` (comma list, default `all`) can force individual stages
-  back to CPU without rebuilding the image.
+  back to CPU without rebuilding the image: valid keys are `noise_reduction`,
+  `enhance`, `separate_music`, and `transcribe`; diarization follows `transcribe` or
+  `separate_speakers` (and also accepts `diarize`). DeepFilterNet is pinned to CPU when
+  `noise_reduction` is excluded.
 - Compressed artifacts by default: generated audio (`cleaned_audio`, `enhanced_audio`,
   `stem_music`, `stem_dialogue`, `stem_speaker`) is encoded to MP3, 192 kbps CBR, and
   served as `audio/mpeg`. The inspector's **Generated audio** control offers
   **Standard (MP3)** and **Lossless (WAV)**; the choice is stored on each effect run.
   Original uploads are never re-encoded, and older WAV artifacts still play.
+- Rollout order matters: deploy the new worker image while the API still requests WAV,
+  then deploy the API/UI that defaults to MP3. An old worker cannot serve an MP3 request
+  (it would upload WAV bytes under `.mp3` keys), so roll the API back before rolling a
+  worker back.
 - Configurable studio finishing chain after Resemble: high-pass, body/mud/presence EQ,
   de-esser, compressor, limiter, and EBU R128 loudness normalization. The controls live
   in a collapsible Studio polish panel that is collapsed by default; settings are stored

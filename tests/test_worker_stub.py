@@ -1,6 +1,9 @@
 import io
+import subprocess
 import wave
 from pathlib import Path
+
+import pytest
 
 from app.services.runpod import expected_artifacts
 from parecut_engine.schemas import (
@@ -16,6 +19,7 @@ from runpod_app.worker import (
     _encode_audio,
     _gpu_stages,
     _merge_language_segments,
+    _stage_allows_gpu,
     _studio_filter_chain,
     handler,
     transcribe_languages,
@@ -152,6 +156,57 @@ def test_gpu_stages_reads_csv(monkeypatch):
 def test_device_for_disabled_stage_is_cpu(monkeypatch):
     monkeypatch.setenv("PARECUT_GPU_STAGES", "enhance")
     assert _device_for("separate_music") == "cpu"
+
+
+def test_diarize_follows_transcribe_stage(monkeypatch):
+    monkeypatch.setenv("PARECUT_GPU_STAGES", "transcribe")
+    assert _stage_allows_gpu("diarize") is True
+
+
+def test_diarize_is_excluded_when_its_stages_are(monkeypatch):
+    monkeypatch.setenv("PARECUT_GPU_STAGES", "enhance")
+    assert _stage_allows_gpu("diarize") is False
+
+
+def test_encode_audio_failure_raises(tmp_path, monkeypatch):
+    def fail(*args, **kwargs):
+        raise subprocess.CalledProcessError(1, "ffmpeg", stderr=b"boom")
+
+    monkeypatch.setattr("runpod_app.worker.subprocess.run", fail)
+    with pytest.raises(RuntimeError, match="mp3 encoding failed"):
+        _encode_audio(make_wav(0.5), tmp_path, "mp3", "tone")
+
+
+def test_handler_uploads_nothing_when_encoding_fails(monkeypatch):
+    job = make_job(
+        PipelineConfig(
+            audio_format="wav",
+            noise_reduction=True,
+            enhance=False,
+            separate_music=False,
+            separate_speakers=False,
+            transcribe=False,
+            rough_cut=False,
+        )
+    )
+    job["input"]["expected_artifacts"] = [
+        artifact
+        for artifact in job["input"]["expected_artifacts"]
+        if artifact["kind"] == "cleaned_audio"
+    ]
+    job["input"]["outputs"] = {
+        artifact["key"]: f"https://upload.example/{index}"
+        for index, artifact in enumerate(job["input"]["expected_artifacts"])
+    }
+    client = FakeClient()
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("mp3 encoding failed")
+
+    monkeypatch.setattr("runpod_app.worker._encode_audio", fail)
+    with pytest.raises(RuntimeError, match="mp3 encoding failed"):
+        handler(job, client=client, denoiser=fake_denoiser)
+    assert client.puts == []
 
 
 def test_encode_audio_writes_mp3(tmp_path):
