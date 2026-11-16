@@ -143,9 +143,16 @@ def _frames(data: bytes) -> int:
         return reader.getnframes()
 
 
-def test_gpu_stages_defaults_to_all(monkeypatch):
+def test_gpu_stages_default_uses_the_fast_stages(monkeypatch):
     monkeypatch.delenv("PARECUT_GPU_STAGES", raising=False)
-    assert _gpu_stages() is None
+    assert _gpu_stages() == {
+        "noise_reduction",
+        "enhance",
+        "separate_music",
+    }
+    assert _stage_allows_gpu("enhance") is True
+    assert _stage_allows_gpu("transcribe") is False
+    assert _stage_allows_gpu("diarize") is False
 
 
 def test_gpu_stages_reads_csv(monkeypatch):

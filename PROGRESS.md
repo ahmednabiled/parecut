@@ -99,13 +99,12 @@ Complete:
   restores and extends the voice at 44.1 kHz, blends it with the denoised input using
   `enhance_mix`, and labels the track `Studio Enhanced Audio (Resemble Enhance)`
 - GPU inference with CPU fallback: the image uses CUDA PyTorch 2.7.1 (cu128), which
-  covers Blackwell sm_120 and older Ampere/Ada cards. Resemble Enhance, WhisperX,
-  faster-whisper, alignment, DeepFilterNet, and Nemotron diarization select the GPU when
-  present. `PARECUT_GPU_STAGES` (comma list, default `all`) can force individual stages
-  back to CPU without rebuilding the image: valid keys are `noise_reduction`,
-  `enhance`, `separate_music`, and `transcribe`; diarization follows `transcribe` or
-  `separate_speakers` (and also accepts `diarize`). DeepFilterNet is pinned to CPU when
-  `noise_reduction` is excluded.
+  covers Blackwell sm_120 and older Ampere/Ada cards. Resemble Enhance, Demucs, and
+  DeepFilterNet run on the GPU by default. `PARECUT_GPU_STAGES` (comma list, default
+  `noise_reduction,enhance,separate_music`) selects stages. Transcription and
+  diarization stay on CPU by default because GPU float16 changed mixed-language
+  output; add `transcribe` to the list (which also enables `diarize`) to opt in.
+  DeepFilterNet is pinned to CPU when `noise_reduction` is excluded.
 - Compressed artifacts by default: generated audio (`cleaned_audio`, `enhanced_audio`,
   `stem_music`, `stem_dialogue`, `stem_speaker`) is encoded to MP3, 192 kbps CBR, and
   served as `audio/mpeg`. The inspector's **Generated audio** control offers
@@ -267,9 +266,11 @@ Current worker:
   with `runpod`'s `packaging>=26.3`.
 - All model weights are baked into the image. Runtime uses `HF_HUB_OFFLINE=1` and
   `TRANSFORMERS_OFFLINE=1`.
-- Inference uses the worker GPU when available and falls back to CPU. Each model logs
-  its chosen device on first load. `PARECUT_GPU_STAGES` can force stages back to CPU
-  (for example `enhance,separate_music`) without rebuilding the image.
+- Inference uses the worker GPU for noise reduction, enhancement, and separation, and
+  falls back to CPU. Each model logs its chosen device on first load.
+  `PARECUT_GPU_STAGES` selects stages (default `noise_reduction,enhance,separate_music`);
+  transcription and diarization are opt-in because GPU float16 degraded the
+  mixed-language merge in testing.
 - Worker progress updates still cause problems in Runpod. They are disabled by default;
   set `PARECUT_WORKER_PROGRESS=1` only after implementing them with a timeout or a safer
   progress mechanism.

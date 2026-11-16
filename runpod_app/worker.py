@@ -83,8 +83,11 @@ class LanguageSegment:
     words: list[tuple[float, float, str]]
 
 
+DEFAULT_GPU_STAGES = "noise_reduction,enhance,separate_music"
+
+
 def _gpu_stages() -> set[str] | None:
-    raw = os.getenv("PARECUT_GPU_STAGES", "all").strip().lower()
+    raw = os.getenv("PARECUT_GPU_STAGES", DEFAULT_GPU_STAGES).strip().lower()
     if raw in {"", "all", "*"}:
         return None
     if raw in {"none", "cpu", "off"}:
