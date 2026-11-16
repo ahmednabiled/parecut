@@ -60,7 +60,10 @@ RESEMBLE_RUN_DIR = Path(
 _MODEL = None
 _STATE = None
 _WHISPER_MODEL = None
-_RAW_WHISPER_MODEL = None
+_RAW_WHISPER_MODELS: dict[str, Any] = {}
+_ARABIC_WHISPER_MODEL = os.getenv(
+    "PARECUT_ARABIC_WHISPER_MODEL", "/opt/whisper-ar-dialectal"
+)
 _ALIGN_MODELS: dict[str, tuple[Any, Any]] = {}
 _DEMUCS_MODEL = None
 _DEVICE_LOG: set[str] = set()
@@ -112,6 +115,37 @@ class LanguageSegment:
 DEFAULT_GPU_STAGES = "noise_reduction,enhance,separate_music"
 DF_CHUNK_SECONDS = 120
 DF_OVERLAP_SECONDS = 2
+
+ARABIC_DIALECT_PROMPTS = {
+    "auto": (
+        "محادثة بالعربية. اكتب الكلام كما يُنطق بالعامية دون تحويله إلى الفصحى."
+    ),
+    "msa": "محادثة بالعربية الفصحى. اكتب الكلام بالعربية دون تشكيل.",
+    "egyptian": (
+        "محادثة بالعامية المصرية. كلمات شائعة: إيه، عايز، مش، خالص، يعني، "
+        "كده، دلوقتي، حاجة، أوي، برضو، لسه، خلاص، تمام، بص، خلينا، عشان."
+    ),
+    "gulf": (
+        "محادثة باللهجة الخليجية. كلمات شائعة: شنو، وايد، الحين، أبي، تكفى، "
+        "عشان، يعني، شلون، چذي، مو."
+    ),
+    "levantine": (
+        "محادثة باللهجة الشامية. كلمات شائعة: شو، هلق، كتير، منيح، بدي، "
+        "عنجد، هيك، ليش، كيف، هلأ."
+    ),
+    "maghrebi": (
+        "محادثة بالدارجة المغاربية. كلمات شائعة: واش، بزاف، دابا، كيفاش، "
+        "مزيان، شنو، غادي، خلاص، بصح، برك."
+    ),
+    "iraqi": (
+        "محادثة باللهجة العراقية. كلمات شائعة: شنو، هواية، هسه، شلون، خوش، "
+        "عود، ماكو، أكو، چان، گاعد."
+    ),
+}
+
+
+def _dialect_prompt(dialect: str | None) -> str:
+    return ARABIC_DIALECT_PROMPTS.get(dialect or "auto", ARABIC_DIALECT_PROMPTS["auto"])
 
 
 def _gpu_stages() -> set[str] | None:
@@ -487,21 +521,33 @@ def _get_whisper_model():
     return _WHISPER_MODEL
 
 
-def _get_raw_whisper_model():
-    global _RAW_WHISPER_MODEL
-    if _RAW_WHISPER_MODEL is None:
+def _get_raw_whisper_model(language: str = "en"):
+    key = "ar" if language == "ar" else "default"
+    model = _RAW_WHISPER_MODELS.get(key)
+    if model is None:
         from faster_whisper import WhisperModel
 
-        logger.info("loading faster-whisper word-timestamp model")
-        _RAW_WHISPER_MODEL = WhisperModel(
-            "large-v3-turbo",
+        model_ref = "large-v3-turbo"
+        if language == "ar":
+            if Path(_ARABIC_WHISPER_MODEL).is_dir():
+                model_ref = _ARABIC_WHISPER_MODEL
+            else:
+                logger.warning(
+                    "Arabic dialect model missing at %s; using %s",
+                    _ARABIC_WHISPER_MODEL,
+                    model_ref,
+                )
+        logger.info("loading faster-whisper model for %s: %s", language, model_ref)
+        model = WhisperModel(
+            model_ref,
             device=_device_for("transcribe"),
             compute_type=_compute_type_for("transcribe"),
             download_root="/root/.cache/whisperx",
             local_files_only=True,
         )
-        logger.info("faster-whisper word-timestamp model ready")
-    return _RAW_WHISPER_MODEL
+        _RAW_WHISPER_MODELS[key] = model
+        logger.info("faster-whisper model ready for %s", language)
+    return model
 
 
 def _get_align_model(language: str) -> tuple[Any, Any]:
@@ -602,12 +648,13 @@ def _raw_segment_confidence(segment) -> float:
 
 
 def _transcribe_raw(
-    wav_path: Path, language: str
+    wav_path: Path, language: str, dialect: str | None = None
 ) -> list[LanguageSegment]:
     import whisperx
 
-    model = _get_raw_whisper_model()
+    model = _get_raw_whisper_model(language)
     audio = whisperx.load_audio(str(wav_path))
+    prompt = _dialect_prompt(dialect) if language == "ar" else None
     segments, _info = model.transcribe(
         audio,
         language=language,
@@ -615,6 +662,7 @@ def _transcribe_raw(
         condition_on_previous_text=False,
         word_timestamps=True,
         vad_filter=True,
+        initial_prompt=prompt,
     )
 
     candidates: list[LanguageSegment] = []
@@ -649,11 +697,11 @@ def _transcribe_raw(
 
 
 def _transcribe_language(
-    wav_path: Path, language: str
+    wav_path: Path, language: str, dialect: str | None = None
 ) -> list[LanguageSegment]:
     if language == "ar":
         try:
-            return _transcribe_raw(wav_path, language)
+            return _transcribe_raw(wav_path, language, dialect)
         except Exception:
             logger.exception(
                 "raw Arabic word-timestamp transcription failed; "
@@ -753,6 +801,7 @@ def _merge_language_segments(
 def transcribe_languages(
     wav_path: Path,
     languages: list[str] | None = None,
+    arabic_dialect: str | None = None,
     *,
     transcriber: Transcriber | None = None,
 ) -> Transcript:
@@ -766,7 +815,9 @@ def transcribe_languages(
                 )
             )
         else:
-            candidates.extend(_transcribe_language(wav_path, language))
+            candidates.extend(
+                _transcribe_language(wav_path, language, arabic_dialect)
+            )
 
     if not candidates:
         return Transcript(speakers=[], segments=[])
@@ -1104,6 +1155,7 @@ def handler(
             transcript = transcribe_languages(
                 working_wav,
                 config.transcription_languages,
+                config.arabic_dialect,
                 transcriber=transcriber,
             )
             transcript = assign_speakers(transcript, turns)

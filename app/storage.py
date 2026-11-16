@@ -5,6 +5,7 @@ import hmac
 import json
 import subprocess
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import quote
@@ -32,6 +33,8 @@ class ObjectStorage(Protocol):
     async def get(self, key: str) -> bytes: ...
 
     async def get_range(self, key: str, start: int, end: int) -> bytes: ...
+
+    def iter_range(self, key: str, start: int, end: int) -> Iterator[bytes]: ...
 
     async def copy(self, src_key: str, dst_key: str) -> None: ...
 
@@ -164,6 +167,18 @@ class LocalObjectStorage:
 
         return await asyncio.to_thread(read)
 
+    def iter_range(self, key: str, start: int, end: int) -> Iterator[bytes]:
+        path = self._path(key)
+        remaining = end - start + 1
+        with path.open("rb") as handle:
+            handle.seek(start)
+            while remaining > 0:
+                chunk = handle.read(min(256 * 1024, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+                yield chunk
+
     async def copy(self, src_key: str, dst_key: str) -> None:
         await self.put(dst_key, await self.get(src_key), "application/octet-stream")
 
@@ -265,6 +280,22 @@ class R2ObjectStorage:
             Range=f"bytes={start}-{end}",
         )
         return await asyncio.to_thread(response["Body"].read)
+
+    def iter_range(self, key: str, start: int, end: int) -> Iterator[bytes]:
+        response = self._client.get_object(
+            Bucket=self.bucket,
+            Key=key,
+            Range=f"bytes={start}-{end}",
+        )
+        body = response["Body"]
+        try:
+            while True:
+                chunk = body.read(256 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            body.close()
 
     async def copy(self, src_key: str, dst_key: str) -> None:
         await asyncio.to_thread(

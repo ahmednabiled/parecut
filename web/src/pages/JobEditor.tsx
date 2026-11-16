@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError, apiFetch } from "../api/client";
 import type {
+  ArabicDialect,
   Artifact,
   AudioFormat,
   EffectName,
@@ -26,6 +27,7 @@ import {
 } from "../lib/captions";
 import {
   AUDIO_KINDS,
+  DEFAULT_ARABIC_DIALECT,
   DEFAULT_AUDIO_FORMAT,
   DEFAULT_LANGUAGES,
   DEFAULT_STUDIO,
@@ -152,6 +154,8 @@ export default function JobEditor() {
 
   const [chunkWords, setChunkWords] = useState(5);
   const [muted, setMuted] = useState<Record<string, boolean>>({});
+  const [selectedTrackId, setSelectedTrackId] = useState("original");
+  const [deletingTrackId, setDeletingTrackId] = useState<string | null>(null);
   const [captionEdits, setCaptionEdits] = useState<Record<string, string>>({});
   const [applyError, setApplyError] = useState<string | null>(null);
   const [shortfall, setShortfall] = useState<Shortfall | null>(null);
@@ -188,6 +192,13 @@ export default function JobEditor() {
     [project, effects],
   );
   const tracks = useMemo(() => buildTracks(project, effects), [project, effects]);
+  const selectedTrack = useMemo(
+    () =>
+      tracks.find((track) => track.id === selectedTrackId) ??
+      tracks[0] ??
+      null,
+    [tracks, selectedTrackId],
+  );
   const transcriptArtifact = transcriptSource?.artifact ?? null;
 
   const transcriptQuery = useQuery<string>({
@@ -273,6 +284,8 @@ export default function JobEditor() {
       studio?: StudioChain;
       languages?: TranscriptionLanguage[];
       audioFormat?: AudioFormat;
+      arabicDialect?: ArabicDialect;
+      sourceArtifactId?: string;
     }) => {
       const payload: Record<string, unknown> = { effect: variables.effect };
       if (variables.enhanceMix !== undefined) {
@@ -284,8 +297,14 @@ export default function JobEditor() {
       if (variables.languages !== undefined) {
         payload.languages = variables.languages;
       }
+      if (variables.arabicDialect !== undefined) {
+        payload.arabic_dialect = variables.arabicDialect;
+      }
       if (variables.audioFormat !== undefined) {
         payload.audio_format = variables.audioFormat;
+      }
+      if (variables.sourceArtifactId !== undefined) {
+        payload.source_artifact_id = variables.sourceArtifactId;
       }
       return apiFetch<Job>(`/api/jobs/${id}/effects`, {
         method: "POST",
@@ -324,6 +343,37 @@ export default function JobEditor() {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (artifactId: string) =>
+      apiFetch<void>(`/api/jobs/${id}/artifacts/${artifactId}`, {
+        method: "DELETE",
+      }),
+    onMutate: (artifactId) => {
+      setDeletingTrackId(artifactId);
+      setApplyError(null);
+    },
+    onSuccess: () => {
+      setDeletingTrackId(null);
+      void queryClient.invalidateQueries({ queryKey: ["job", id] });
+      void queryClient.invalidateQueries({ queryKey: ["job-effects", id] });
+    },
+    onError: (error) => {
+      setDeletingTrackId(null);
+      setApplyError(
+        error instanceof Error
+          ? error.message
+          : "Could not delete the track. Try again.",
+      );
+    },
+  });
+
+  const handleDeleteTrack = useCallback(
+    (trackId: string) => {
+      deleteMutation.mutate(trackId);
+    },
+    [deleteMutation],
+  );
+
   const handleApply = useCallback(
     (
       effect: EffectName,
@@ -331,12 +381,25 @@ export default function JobEditor() {
       studio?: StudioChain,
       languages?: TranscriptionLanguage[],
       audioFormat?: AudioFormat,
+      arabicDialect?: ArabicDialect,
     ) => {
       setApplyError(null);
       setShortfall(null);
-      applyMutation.mutate({ effect, enhanceMix, studio, languages, audioFormat });
+      const sourceArtifactId =
+        selectedTrack && selectedTrack.kind !== "original"
+          ? selectedTrack.id
+          : undefined;
+      applyMutation.mutate({
+        effect,
+        enhanceMix,
+        studio,
+        languages,
+        audioFormat,
+        arabicDialect,
+        sourceArtifactId,
+      });
     },
-    [applyMutation],
+    [applyMutation, selectedTrack],
   );
 
   const handleToggleMute = useCallback(
@@ -513,6 +576,10 @@ export default function JobEditor() {
             tracks={tracks}
             muted={mutedTracks}
             onToggleMute={handleToggleMute}
+            selectedTrackId={selectedTrack?.id ?? "original"}
+            onSelectTrack={setSelectedTrackId}
+            onDeleteTrack={handleDeleteTrack}
+            deletingTrackId={deletingTrackId}
             duration={duration}
             currentTime={audio.currentTime}
             getCurrentTime={audio.getCurrentTime}
@@ -532,6 +599,7 @@ export default function JobEditor() {
               : null
           }
           onApply={handleApply}
+          inputLabel={selectedTrack?.label ?? "Original audio"}
           error={applyError}
           shortfall={shortfall}
           transcriptJob={transcriptSource?.job ?? null}
@@ -547,6 +615,9 @@ export default function JobEditor() {
           }
           defaultAudioFormat={
             project.pipeline_config.audio_format ?? DEFAULT_AUDIO_FORMAT
+          }
+          defaultDialect={
+            project.pipeline_config.arabic_dialect ?? DEFAULT_ARABIC_DIALECT
           }
         />
       </div>

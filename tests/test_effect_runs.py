@@ -1,7 +1,8 @@
 import asyncio
 from decimal import Decimal
+from pathlib import Path
 
-from app.models import UserProfile
+from app.models import Job, JobArtifact, UserProfile
 from tests.helpers import make_wav, register, upload
 
 
@@ -148,13 +149,24 @@ async def test_transcribe_effect_stores_languages(app, client):
 
     response = await client.post(
         f"/api/jobs/{parent['id']}/effects",
-        json={"effect": "transcribe", "languages": ["en", "ar"]},
+        json={
+            "effect": "transcribe",
+            "languages": ["en", "ar"],
+            "arabic_dialect": "egyptian",
+        },
     )
     assert response.status_code == 201, response.text
     child = response.json()
     assert child["pipeline_config"]["transcribe"] is True
     assert child["pipeline_config"]["rough_cut"] is True
     assert child["pipeline_config"]["transcription_languages"] == ["en", "ar"]
+    assert child["pipeline_config"]["arabic_dialect"] == "egyptian"
+
+    invalid = await client.post(
+        f"/api/jobs/{parent['id']}/effects",
+        json={"effect": "transcribe", "arabic_dialect": "klingon"},
+    )
+    assert invalid.status_code == 422
 
 
 async def test_enhance_effect_stores_audio_format(app, client):
@@ -200,3 +212,100 @@ async def test_effect_run_requires_credits_and_project_parent(app, client):
     assert response.status_code == 402
     assert response.json()["required_minutes"] == 1.0
     assert response.json()["available_minutes"] == 0.5
+
+
+async def test_effect_uses_selected_source_artifact(app, client):
+    created = await _draft_job(client)
+    parent = created["job"]
+
+    applied = await client.post(
+        f"/api/jobs/{parent['id']}/effects", json={"effect": "noise_reduction"}
+    )
+    assert applied.status_code == 201, applied.text
+    first = await _wait(client, applied.json()["id"])
+    artifact_id = first["artifacts"][0]["id"]
+
+    chained = await client.post(
+        f"/api/jobs/{parent['id']}/effects",
+        json={"effect": "enhance", "source_artifact_id": artifact_id},
+    )
+    assert chained.status_code == 201, chained.text
+    second = chained.json()
+
+    async with app.state.sessionmaker() as session:
+        source_artifact = await session.get(JobArtifact, artifact_id)
+        chained_job = await session.get(Job, second["id"])
+        assert chained_job.source_r2_key == source_artifact.r2_key
+        assert chained_job.source_filename == Path(source_artifact.r2_key).name
+
+    missing = await client.post(
+        f"/api/jobs/{parent['id']}/effects",
+        json={"effect": "enhance", "source_artifact_id": "does-not-exist"},
+    )
+    assert missing.status_code == 404
+
+    async with app.state.sessionmaker() as session:
+        transcript = JobArtifact(
+            job_id=parent["id"],
+            kind="transcript_after",
+            label="Transcript",
+            format="json",
+            r2_key="jobs/transcript_after.json",
+        )
+        session.add(transcript)
+        await session.commit()
+        await session.refresh(transcript)
+        transcript_id = transcript.id
+
+    rejected = await client.post(
+        f"/api/jobs/{parent['id']}/effects",
+        json={"effect": "noise_reduction", "source_artifact_id": transcript_id},
+    )
+    assert rejected.status_code == 422
+
+
+async def test_delete_generated_track_removes_artifact_and_run(app, client):
+    created = await _draft_job(client)
+    parent = created["job"]
+
+    applied = await client.post(
+        f"/api/jobs/{parent['id']}/effects", json={"effect": "noise_reduction"}
+    )
+    finished = await _wait(client, applied.json()["id"])
+    artifact = finished["artifacts"][0]
+
+    deleted = await client.delete(
+        f"/api/jobs/{parent['id']}/artifacts/{artifact['id']}"
+    )
+    assert deleted.status_code == 204, deleted.text
+
+    assert (await client.get(artifact["content_url"])).status_code == 404
+    assert (await client.get(f"/api/jobs/{parent['id']}/effects")).json() == []
+
+
+async def test_delete_project_artifact_keeps_project(app, client):
+    created = await _draft_job(client)
+    parent = created["job"]
+
+    async with app.state.sessionmaker() as session:
+        artifact = JobArtifact(
+            job_id=parent["id"],
+            kind="cleaned_audio",
+            label="Track",
+            format="mp3",
+            r2_key="jobs/project/track.mp3",
+        )
+        session.add(artifact)
+        await session.commit()
+        await session.refresh(artifact)
+        artifact_id = artifact.id
+
+    deleted = await client.delete(
+        f"/api/jobs/{parent['id']}/artifacts/{artifact_id}"
+    )
+    assert deleted.status_code == 204, deleted.text
+
+    assert (await client.get(f"/api/jobs/{parent['id']}")).status_code == 200
+    assert (await client.delete(
+        f"/api/jobs/{parent['id']}/artifacts/{artifact_id}"
+    )).status_code == 404

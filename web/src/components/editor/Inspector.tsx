@@ -1,5 +1,6 @@
 import { useId, useEffect, useState } from "react";
 import type {
+  ArabicDialect,
   AudioFormat,
   EffectName,
   Job,
@@ -7,7 +8,9 @@ import type {
   TranscriptionLanguage,
 } from "../../api/types";
 import {
+  ARABIC_DIALECTS,
   AUDIO_FORMATS,
+  DEFAULT_ARABIC_DIALECT,
   DEFAULT_AUDIO_FORMAT,
   DEFAULT_LANGUAGES,
   DEFAULT_STUDIO,
@@ -34,7 +37,9 @@ interface InspectorProps {
     studio?: StudioChain,
     languages?: TranscriptionLanguage[],
     audioFormat?: AudioFormat,
+    arabicDialect?: ArabicDialect,
   ) => void;
+  inputLabel: string;
   error: string | null;
   shortfall: Shortfall | null;
   transcriptJob: Job | null;
@@ -44,6 +49,7 @@ interface InspectorProps {
   defaultStudio: StudioChain;
   defaultLanguages: TranscriptionLanguage[];
   defaultAudioFormat: AudioFormat;
+  defaultDialect: ArabicDialect;
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -324,10 +330,15 @@ function StudioPanel({
 function LanguagePicker({
   languages,
   onToggle,
+  dialect,
+  onDialect,
 }: {
   languages: TranscriptionLanguage[];
   onToggle: (language: TranscriptionLanguage) => void;
+  dialect: ArabicDialect;
+  onDialect: (dialect: ArabicDialect) => void;
 }) {
+  const arabic = languages.includes("ar");
   return (
     <div className="mt-4">
       <p className="text-[12px] font-medium text-on-surface">
@@ -337,25 +348,55 @@ function LanguagePicker({
         {TRANSCRIPTION_LANGUAGES.map(({ code, label }) => {
           const active = languages.includes(code);
           return (
-            <label
+            <button
               key={code}
-              className={`inline-flex h-7 cursor-pointer items-center rounded-full px-3 text-[11px] font-medium transition-colors duration-150 ease-standard focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-on-surface ${
+              type="button"
+              aria-pressed={active}
+              onClick={() => onToggle(code)}
+              className={`inline-flex h-7 items-center rounded-full border px-3 text-[11px] font-medium transition-colors duration-150 ease-standard focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-on-surface ${
                 active
-                  ? "bg-primary text-on-primary"
-                  : "border border-outline text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+                  ? "border-primary bg-primary text-on-primary"
+                  : "border-outline text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
               }`}
             >
-              <input
-                type="checkbox"
-                checked={active}
-                onChange={() => onToggle(code)}
-                className="sr-only"
-              />
               {label}
-            </label>
+            </button>
           );
         })}
       </div>
+
+      {arabic ? (
+        <div className="mt-3">
+          <p className="text-[12px] font-medium text-on-surface">
+            Arabic dialect
+          </p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {ARABIC_DIALECTS.map(({ code, label }) => {
+              const active = dialect === code;
+              return (
+                <button
+                  key={code}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => onDialect(code)}
+                  className={`inline-flex h-6 items-center rounded-full border px-2.5 text-[10px] font-medium transition-colors duration-150 ease-standard focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-on-surface ${
+                    active
+                      ? "border-primary bg-primary text-on-primary"
+                      : "border-outline-variant text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-[11px] leading-4 text-on-surface-variant">
+            Arabic uses a dialect-tuned Whisper model. Pick the closest dialect
+            so the vocabulary and spelling match the speaker.
+          </p>
+        </div>
+      ) : null}
+
       <p className="mt-2 text-[11px] leading-4 text-on-surface-variant">
         Select every language present. Multiple languages run the model once per
         language and merge the results, so processing takes longer.
@@ -377,6 +418,8 @@ function EffectRow({
   onStudioOpen,
   languages,
   onLanguages,
+  dialect,
+  onDialect,
   onApply,
 }: {
   definition: EffectDefinition;
@@ -391,10 +434,13 @@ function EffectRow({
   onStudioOpen: () => void;
   languages: TranscriptionLanguage[];
   onLanguages: (language: TranscriptionLanguage) => void;
+  dialect: ArabicDialect;
+  onDialect: (dialect: ArabicDialect) => void;
   onApply: (
     enhanceMix?: number,
     studio?: StudioChain,
     languages?: TranscriptionLanguage[],
+    arabicDialect?: ArabicDialect,
   ) => void;
 }) {
   const running = run !== null && RUNNING_STATUSES.has(run.status);
@@ -442,7 +488,12 @@ function EffectRow({
       ) : null}
 
       {isTranscribe ? (
-        <LanguagePicker languages={languages} onToggle={onLanguages} />
+        <LanguagePicker
+          languages={languages}
+          onToggle={onLanguages}
+          dialect={dialect}
+          onDialect={onDialect}
+        />
       ) : null}
 
       <button
@@ -453,6 +504,7 @@ function EffectRow({
             isEnhance ? mix / 100 : undefined,
             isEnhance ? studio : undefined,
             isTranscribe ? languages : undefined,
+            isTranscribe && languages.includes("ar") ? dialect : undefined,
           )
         }
         className="mt-4 inline-flex h-8 items-center gap-2 rounded-[16px] border border-outline px-3 text-[12px] font-medium text-on-surface transition-colors duration-150 ease-standard hover:bg-surface-container-high disabled:cursor-not-allowed disabled:opacity-50"
@@ -491,6 +543,7 @@ export default function Inspector({
   effects,
   applying,
   onApply,
+  inputLabel,
   error,
   shortfall,
   transcriptJob,
@@ -500,6 +553,7 @@ export default function Inspector({
   defaultStudio,
   defaultLanguages,
   defaultAudioFormat,
+  defaultDialect,
 }: InspectorProps) {
   const [mix, setMix] = useState(() =>
     Math.max(0, Math.min(100, Math.round(defaultMix * 100))),
@@ -518,6 +572,9 @@ export default function Inspector({
   const [audioFormat, setAudioFormat] = useState<AudioFormat>(
     defaultAudioFormat ?? DEFAULT_AUDIO_FORMAT,
   );
+  const [dialect, setDialect] = useState<ArabicDialect>(
+    defaultDialect ?? DEFAULT_ARABIC_DIALECT,
+  );
 
   function toggleLanguage(language: TranscriptionLanguage) {
     setLanguages((current) => {
@@ -535,6 +592,12 @@ export default function Inspector({
     const next = lastTranscribe?.pipeline_config.transcription_languages;
     if (next && next.length > 0) {
       setLanguages(next);
+    }
+  }, [lastTranscribe?.id]);
+  useEffect(() => {
+    const next = lastTranscribe?.pipeline_config.arabic_dialect;
+    if (next) {
+      setDialect(next);
     }
   }, [lastTranscribe?.id]);
 
@@ -592,7 +655,21 @@ export default function Inspector({
           </p>
         ) : null}
 
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2.5">
+        <div className="mt-5 rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2.5">
+          <div className="flex items-baseline justify-between gap-3">
+            <p className="text-[12px] text-on-surface-variant">
+              Effects apply to
+            </p>
+            <p className="min-w-0 truncate text-[12px] font-medium text-on-surface">
+              {inputLabel}
+            </p>
+          </div>
+          <p className="mt-1 text-[11px] leading-4 text-on-surface-variant">
+            Click a track name in the timeline to change the input.
+          </p>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2.5">
           <div className="min-w-0">
             <p className="text-[12px] font-medium text-on-surface">
               Generated audio
@@ -644,13 +721,21 @@ export default function Inspector({
                 onStudioOpen={() => setStudioOpen((open) => !open)}
                 languages={languages}
                 onLanguages={toggleLanguage}
-                onApply={(enhanceMix, studioSettings, languageSettings) =>
+                dialect={dialect}
+                onDialect={setDialect}
+                onApply={(
+                  enhanceMix,
+                  studioSettings,
+                  languageSettings,
+                  arabicDialect,
+                ) =>
                   onApply(
                     definition.name,
                     enhanceMix,
                     studioSettings,
                     languageSettings,
                     definition.producesAudio ? audioFormat : undefined,
+                    arabicDialect,
                   )
                 }
               />

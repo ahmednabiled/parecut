@@ -173,7 +173,14 @@ snapshot_download(
     ],
     cache_dir="/root/.cache/whisperx",
 )
+
+snapshot_download(
+    "parseh/whisper-ar-dialectal-ct2",
+    local_dir="/opt/whisper-ar-dialectal",
+)
 PY
+
+RUN python -c "from faster_whisper import WhisperModel; WhisperModel('/opt/whisper-ar-dialectal', device='cpu', compute_type='int8'); print('Arabic dialect model ready')"
 
 RUN python - <<'PY'
 from demucs.pretrained import get_model

@@ -47,6 +47,7 @@ export interface PipelineConfig {
   transcribe: boolean;
   rough_cut: boolean;
   transcription_languages: TranscriptionLanguage[];
+  arabic_dialect: ArabicDialect;
   audio_format: AudioFormat;
 }
 
@@ -84,6 +85,14 @@ export type EffectName =
   | "transcribe";
 
 export type TranscriptionLanguage = "en" | "ar";
+export type ArabicDialect =
+  | "auto"
+  | "msa"
+  | "egyptian"
+  | "gulf"
+  | "levantine"
+  | "maghrebi"
+  | "iraqi";
 export type AudioFormat = "mp3" | "wav";
 
 export interface Job {

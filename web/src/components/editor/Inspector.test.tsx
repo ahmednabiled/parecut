@@ -10,6 +10,7 @@ function renderInspector(onApply = vi.fn()) {
       effects={[]}
       applying={null}
       onApply={onApply}
+      inputLabel="Original audio"
       error={null}
       shortfall={null}
       transcriptJob={null}
@@ -19,6 +20,7 @@ function renderInspector(onApply = vi.fn()) {
       defaultStudio={DEFAULT_STUDIO}
       defaultLanguages={["en"]}
       defaultAudioFormat="mp3"
+      defaultDialect="auto"
     />,
   );
   return onApply;
@@ -42,5 +44,40 @@ describe("Inspector audio output", () => {
     const args = onApply.mock.calls[0];
     expect(args[0]).toBe("enhance");
     expect(args[4]).toBe("wav");
+  });
+
+  it("toggles transcription languages with pressed buttons", async () => {
+    const onApply = renderInspector();
+    const user = userEvent.setup();
+
+    const arabic = screen.getByRole("button", { name: "Arabic" });
+    expect(arabic).toHaveAttribute("aria-pressed", "false");
+
+    await user.click(arabic);
+    expect(arabic).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(screen.getByRole("button", { name: "Transcribe" }));
+
+    const args = onApply.mock.calls[0];
+    expect(args[0]).toBe("transcribe");
+    expect(args[3]).toEqual(["en", "ar"]);
+  });
+
+  it("sends the selected Arabic dialect with transcription", async () => {
+    const onApply = renderInspector();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Arabic" }));
+    const egyptian = screen.getByRole("button", { name: "Egyptian" });
+    expect(egyptian).toHaveAttribute("aria-pressed", "false");
+
+    await user.click(egyptian);
+    expect(egyptian).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(screen.getByRole("button", { name: "Transcribe" }));
+
+    const args = onApply.mock.calls[0];
+    expect(args[0]).toBe("transcribe");
+    expect(args[5]).toBe("egyptian");
   });
 });

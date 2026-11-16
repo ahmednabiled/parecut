@@ -6,6 +6,7 @@ import check from "@material-symbols/svg-400/rounded/check.svg";
 import close from "@material-symbols/svg-400/rounded/close.svg";
 import contentCopy from "@material-symbols/svg-400/rounded/content_copy.svg";
 import dashboard from "@material-symbols/svg-400/rounded/dashboard.svg";
+import deleteIcon from "@material-symbols/svg-400/rounded/delete.svg";
 import download from "@material-symbols/svg-400/rounded/download.svg";
 import edit from "@material-symbols/svg-400/rounded/edit.svg";
 import graphicEq from "@material-symbols/svg-400/rounded/graphic_eq.svg";
@@ -37,6 +38,7 @@ const ICONS = {
   close,
   content_copy: contentCopy,
   dashboard,
+  delete: deleteIcon,
   download,
   edit,
   graphic_eq: graphicEq,

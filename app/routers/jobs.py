@@ -1,5 +1,6 @@
 import array
 import asyncio
+import hashlib
 import json
 import mimetypes
 import subprocess
@@ -8,14 +9,14 @@ from collections import defaultdict
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
 from app.config import Settings
 from app.db import get_session
-from app.deps import get_current_user, get_settings_dep
+from app.deps import get_current_user, get_current_user_id, get_settings_dep
 from app.events import EventBroker, get_broker
 from app.models import Job, JobArtifact, User
 from app.schemas import (
@@ -37,6 +38,17 @@ from app.services.roughcut import regenerate_cut_outputs
 from app.storage import ObjectStorage, get_storage
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
+
+
+async def _load_job_for_user(
+    session: AsyncSession, user_id: str, job_id: str
+) -> Job:
+    job = await session.get(Job, job_id)
+    if job is None or job.user_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Job not found"
+        )
+    return job
 
 TEXT_MEDIA_TYPES = {
     "md": "text/markdown",
@@ -113,15 +125,21 @@ async def media_response(
         "Accept-Ranges": "bytes",
         "Content-Disposition": f'inline; filename="{filename}"',
     }
+    if total <= 0:
+        return Response(content=b"", media_type=media_type, headers=headers)
     if bounds is None:
-        data = await storage.get(key)
-        return Response(content=data, media_type=media_type, headers=headers)
+        headers["Content-Length"] = str(total)
+        return StreamingResponse(
+            storage.iter_range(key, 0, total - 1),
+            media_type=media_type,
+            headers=headers,
+        )
 
     start, end = bounds
-    data = await storage.get_range(key, start, end)
     headers["Content-Range"] = f"bytes {start}-{end}/{total}"
-    return Response(
-        content=data,
+    headers["Content-Length"] = str(end - start + 1)
+    return StreamingResponse(
+        storage.iter_range(key, start, end),
         status_code=status.HTTP_206_PARTIAL_CONTENT,
         media_type=media_type,
         headers=headers,
@@ -186,12 +204,35 @@ async def peaks_payload(
 ) -> dict[str, list[float]]:
     cache_key = (key, points)
     peaks = PEAKS_CACHE.get(cache_key)
-    if peaks is None:
-        data = await storage.get(key)
-        peaks = await asyncio.to_thread(compute_peaks, data, points)
-        PEAKS_CACHE[cache_key] = peaks
-        if len(PEAKS_CACHE) > PEAKS_CACHE_LIMIT:
-            PEAKS_CACHE.pop(next(iter(PEAKS_CACHE)))
+    if peaks is not None:
+        return {"peaks": peaks}
+
+    cache_object = (
+        "peaks/" + hashlib.sha256(f"{key}:{points}".encode()).hexdigest() + ".json"
+    )
+    try:
+        if await storage.exists(cache_object):
+            cached = json.loads(await storage.get(cache_object))
+            if isinstance(cached, list):
+                peaks = [float(value) for value in cached]
+                PEAKS_CACHE[cache_key] = peaks
+                return {"peaks": peaks}
+    except Exception:
+        # A missing or unreadable cache must never block the waveform.
+        pass
+
+    data = await storage.get(key)
+    peaks = await asyncio.to_thread(compute_peaks, data, points)
+    PEAKS_CACHE[cache_key] = peaks
+    if len(PEAKS_CACHE) > PEAKS_CACHE_LIMIT:
+        PEAKS_CACHE.pop(next(iter(PEAKS_CACHE)))
+    try:
+        await storage.put(
+            cache_object, json.dumps(peaks).encode(), "application/json"
+        )
+    except Exception:
+        # Caching is best effort.
+        pass
     return {"peaks": peaks}
 
 
@@ -325,30 +366,32 @@ async def apply_effect(
 async def get_source(
     job_id: str,
     request: Request,
-    user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
+    user_id: str = Depends(get_current_user_id),
     storage: ObjectStorage = Depends(get_storage),
 ) -> Response:
-    job = await load_job(session, user, job_id)
-    media_type = (
-        mimetypes.guess_type(job.source_filename)[0] or "application/octet-stream"
-    )
-    filename = Path(job.source_filename).name.replace('"', "")
-    return await media_response(
-        request, storage, job.source_r2_key, media_type, filename
-    )
+    async with request.app.state.sessionmaker() as session:
+        job = await _load_job_for_user(session, user_id, job_id)
+        media_type = (
+            mimetypes.guess_type(job.source_filename)[0]
+            or "application/octet-stream"
+        )
+        filename = Path(job.source_filename).name.replace('"', "")
+        key = job.source_r2_key
+    return await media_response(request, storage, key, media_type, filename)
 
 
 @router.get("/{job_id}/source/peaks")
 async def source_peaks(
     job_id: str,
+    request: Request,
     points: int = Query(default=512, ge=64, le=2048),
-    user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
+    user_id: str = Depends(get_current_user_id),
     storage: ObjectStorage = Depends(get_storage),
 ) -> dict[str, list[float]]:
-    job = await load_job(session, user, job_id)
-    return await peaks_payload(storage, job.source_r2_key, points)
+    async with request.app.state.sessionmaker() as session:
+        job = await _load_job_for_user(session, user_id, job_id)
+        key = job.source_r2_key
+    return await peaks_payload(storage, key, points)
 
 
 @router.get("/{job_id}/artifacts/{artifact_id}/content")
@@ -356,42 +399,43 @@ async def artifact_content(
     job_id: str,
     artifact_id: str,
     request: Request,
-    user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
+    user_id: str = Depends(get_current_user_id),
     storage: ObjectStorage = Depends(get_storage),
 ) -> Response:
-    job = await load_job(session, user, job_id)
-    artifact = await session.get(JobArtifact, artifact_id)
-    if artifact is None or artifact.job_id != job.id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found"
+    async with request.app.state.sessionmaker() as session:
+        job = await _load_job_for_user(session, user_id, job_id)
+        artifact = await session.get(JobArtifact, artifact_id)
+        if artifact is None or artifact.job_id != job.id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found"
+            )
+        media_type = CONTENT_MEDIA_TYPES.get(artifact.format) or (
+            mimetypes.guess_type(Path(artifact.r2_key).name)[0]
+            or "application/octet-stream"
         )
-    media_type = CONTENT_MEDIA_TYPES.get(artifact.format) or (
-        mimetypes.guess_type(Path(artifact.r2_key).name)[0]
-        or "application/octet-stream"
-    )
-    filename = Path(artifact.r2_key).name.replace('"', "")
-    return await media_response(
-        request, storage, artifact.r2_key, media_type, filename
-    )
+        filename = Path(artifact.r2_key).name.replace('"', "")
+        key = artifact.r2_key
+    return await media_response(request, storage, key, media_type, filename)
 
 
 @router.get("/{job_id}/artifacts/{artifact_id}/peaks")
 async def artifact_peaks(
     job_id: str,
     artifact_id: str,
+    request: Request,
     points: int = Query(default=512, ge=64, le=2048),
-    user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
+    user_id: str = Depends(get_current_user_id),
     storage: ObjectStorage = Depends(get_storage),
 ) -> dict[str, list[float]]:
-    job = await load_job(session, user, job_id)
-    artifact = await session.get(JobArtifact, artifact_id)
-    if artifact is None or artifact.job_id != job.id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found"
-        )
-    return await peaks_payload(storage, artifact.r2_key, points)
+    async with request.app.state.sessionmaker() as session:
+        job = await _load_job_for_user(session, user_id, job_id)
+        artifact = await session.get(JobArtifact, artifact_id)
+        if artifact is None or artifact.job_id != job.id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found"
+            )
+        key = artifact.r2_key
+    return await peaks_payload(storage, key, points)
 
 
 @router.patch("/{job_id}/speakers", response_model=JobRead)
@@ -471,6 +515,47 @@ async def job_events(
                 await close()
 
     return EventSourceResponse(event_stream(), ping=15)
+
+
+@router.delete(
+    "/{job_id}/artifacts/{artifact_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_artifact(
+    job_id: str,
+    artifact_id: str,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    storage: ObjectStorage = Depends(get_storage),
+) -> Response:
+    parent = await load_job(session, user, job_id)
+    artifact = await session.get(JobArtifact, artifact_id)
+    owner = await session.get(Job, artifact.job_id) if artifact is not None else None
+    if (
+        artifact is None
+        or owner is None
+        or (owner.id != parent.id and owner.parent_job_id != parent.id)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Track not found"
+        )
+
+    await storage.delete(artifact.r2_key)
+    await session.delete(artifact)
+    await session.flush()
+
+    # A generated track's effect run disappears with its last output, so the
+    # inspector does not keep claiming the effect is applied with no track.
+    if owner.parent_job_id is not None:
+        remaining = (
+            await session.exec(
+                select(JobArtifact).where(JobArtifact.job_id == owner.id)
+            )
+        ).all()
+        if not remaining:
+            await session.delete(owner)
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/{job_id}/artifacts/{artifact_id}/download")

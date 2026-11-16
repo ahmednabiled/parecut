@@ -1,4 +1,5 @@
 import type {
+  ArabicDialect,
   AudioFormat,
   EffectName,
   Job,
@@ -8,6 +9,7 @@ import type {
 
 export const DEFAULT_LANGUAGES: TranscriptionLanguage[] = ["en"];
 export const DEFAULT_AUDIO_FORMAT: AudioFormat = "mp3";
+export const DEFAULT_ARABIC_DIALECT: ArabicDialect = "auto";
 
 export const AUDIO_FORMATS: { code: AudioFormat; label: string }[] = [
   { code: "mp3", label: "Standard (MP3)" },
@@ -20,6 +22,19 @@ export const TRANSCRIPTION_LANGUAGES: {
 }[] = [
   { code: "en", label: "English" },
   { code: "ar", label: "Arabic" },
+];
+
+export const ARABIC_DIALECTS: {
+  code: ArabicDialect;
+  label: string;
+}[] = [
+  { code: "auto", label: "Auto" },
+  { code: "msa", label: "Standard (MSA)" },
+  { code: "egyptian", label: "Egyptian" },
+  { code: "gulf", label: "Gulf" },
+  { code: "levantine", label: "Levantine" },
+  { code: "maghrebi", label: "Maghrebi" },
+  { code: "iraqi", label: "Iraqi" },
 ];
 
 export const DEFAULT_STUDIO: StudioChain = {

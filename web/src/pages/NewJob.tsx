@@ -202,6 +202,7 @@ export default function NewJob() {
   }
 
   const uploadInProgress = progress !== null && progress < 100;
+  const savingToStorage = progress === 100 && !uploadKey;
   const canSubmit = Boolean(
     file && uploadKey && !submitting && !uploadInProgress,
   );
@@ -240,6 +241,8 @@ export default function NewJob() {
             file={file}
             duration={duration}
             progress={progress}
+            uploaded={Boolean(uploadKey)}
+            saving={savingToStorage}
             disabled={submitting}
             error={fileError}
             onSelect={(next) => void selectFile(next)}
@@ -322,7 +325,9 @@ export default function NewJob() {
                 ? "Creating project…"
                 : uploadInProgress
                   ? "Uploading…"
-                  : "Open editor"}
+                  : savingToStorage
+                    ? "Saving to storage…"
+                    : "Open editor"}
             </button>
           </Panel>
         </aside>

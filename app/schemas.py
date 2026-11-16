@@ -4,6 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, EmailStr, Field
 
 from parecut_engine.schemas import (
+    ArabicDialect,
     AudioFormat,
     PipelineConfig,
     SpeakerRole,
@@ -115,7 +116,9 @@ class EffectCreate(BaseModel):
     enhance_mix: float | None = Field(default=None, ge=0, le=1)
     studio: StudioChain | None = None
     languages: list[TranscriptionLanguage] | None = None
+    arabic_dialect: ArabicDialect | None = None
     audio_format: AudioFormat | None = None
+    source_artifact_id: str | None = None
 
 
 class SpeakerRolesUpdate(BaseModel):

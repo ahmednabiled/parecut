@@ -38,6 +38,27 @@ class FakeXhr {
   }
 }
 
+class DeferredXhr extends FakeXhr {
+  static last: DeferredXhr | null = null;
+
+  constructor() {
+    super();
+    DeferredXhr.last = this;
+  }
+
+  send() {
+    this.upload.onprogress?.({
+      lengthComputable: true,
+      loaded: 100,
+      total: 100,
+    } as unknown as ProgressEvent);
+  }
+
+  finish() {
+    this.onload?.();
+  }
+}
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -59,6 +80,7 @@ function renderPage() {
 }
 
 afterEach(() => {
+  DeferredXhr.last = null;
   vi.unstubAllGlobals();
 });
 
@@ -191,5 +213,69 @@ describe("NewJob", () => {
     expect(
       await screen.findByText(/insufficient credits for this upload/i),
     ).toBeInTheDocument();
+  });
+
+  it("keeps the editor locked until the server finishes storing the file", async () => {
+    vi.stubGlobal(
+      "XMLHttpRequest",
+      DeferredXhr as unknown as typeof XMLHttpRequest,
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === "/api/profile") {
+          return json({
+            user: {
+              id: "u1",
+              email: "a@example.com",
+              full_name: "A",
+              avatar_url: null,
+              created_at: "2026-01-01T00:00:00Z",
+            },
+            profile: {
+              credit_balance_minutes: 12,
+              default_fps: "25",
+              default_enhance_mix: 80,
+              default_silence_pad_ms: 150,
+            },
+            jobs: [],
+            ledger: [],
+          });
+        }
+        if (url === "/api/uploads") {
+          return json(
+            {
+              upload_url: "/api/uploads/token",
+              upload_key: "uploads/take.wav",
+              expires_at: "2026-01-01T00:15:00Z",
+            },
+            201,
+          );
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    renderPage();
+
+    await userEvent.upload(
+      screen.getByLabelText(/source media file/i),
+      new File(["audio"], "take.wav", { type: "audio/wav" }),
+    );
+
+    expect(
+      await screen.findByText(/large files can take a few minutes/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /saving to storage/i }),
+    ).toBeDisabled();
+
+    DeferredXhr.last?.finish();
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /open editor/i })).toBeEnabled(),
+    );
+    expect(screen.getByText("Uploaded")).toBeInTheDocument();
   });
 });

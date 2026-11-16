@@ -15,6 +15,7 @@ const complete: PipelineConfig = {
   transcribe: true,
   rough_cut: true,
   transcription_languages: DEFAULT_LANGUAGES,
+  arabic_dialect: "auto",
   audio_format: "mp3",
 };
 

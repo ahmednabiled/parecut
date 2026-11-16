@@ -7,6 +7,8 @@ interface DropzoneProps {
   file: File | null;
   duration: number | null;
   progress: number | null;
+  uploaded?: boolean;
+  saving?: boolean;
   disabled?: boolean;
   error?: string | null;
   onSelect: (file: File) => void;
@@ -17,6 +19,8 @@ export default function Dropzone({
   file,
   duration,
   progress,
+  uploaded = false,
+  saving = false,
   disabled = false,
   error = null,
   onSelect,
@@ -98,7 +102,21 @@ export default function Dropzone({
                     Uploading {uploadPercent}%
                   </p>
                 </div>
-              ) : progress === 100 ? (
+              ) : saving ? (
+                <div className="mt-3">
+                  <div
+                    role="progressbar"
+                    aria-label="Saving upload"
+                    aria-valuetext="Saving to storage"
+                    className="h-1 overflow-hidden rounded-full bg-surface-container-highest"
+                  >
+                    <div className="h-full w-1/3 animate-pulse rounded-full bg-primary" />
+                  </div>
+                  <p className="mt-2 text-[12px] text-on-surface-variant">
+                    Saving to storage… large files can take a few minutes.
+                  </p>
+                </div>
+              ) : uploaded ? (
                 <p className="mt-2 text-[12px] text-on-surface-variant">Uploaded</p>
               ) : null}
             </div>

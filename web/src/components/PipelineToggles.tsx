@@ -9,7 +9,11 @@ interface PipelineTogglesProps {
 
 type StageKey = Exclude<
   keyof PipelineConfig,
-  "enhance_mix" | "studio_chain" | "transcription_languages" | "audio_format"
+  | "enhance_mix"
+  | "studio_chain"
+  | "transcription_languages"
+  | "arabic_dialect"
+  | "audio_format"
 >;
 
 const STAGES: {

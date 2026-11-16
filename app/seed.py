@@ -21,6 +21,7 @@ from parecut_engine.schemas import PipelineConfig
 
 DEMO_EMAIL = "demo@parecut.app"
 DEMO_PASSWORD = "parecut-demo"
+DEMO_CREDIT_MINUTES = Decimal("300")
 DEMO_JOB_ID = "00000000-0000-4000-8000-000000000001"
 DEMO_SOURCE_KEY = "demo/demo_interview.wav"
 
@@ -68,7 +69,7 @@ async def seed_demo(
         await add_ledger_entry(
             session,
             profile,
-            delta=settings.signup_bonus_minutes,
+            delta=DEMO_CREDIT_MINUTES,
             reason="signup_bonus",
         )
 

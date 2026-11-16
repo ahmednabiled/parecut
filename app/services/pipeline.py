@@ -33,6 +33,10 @@ AUDIO_ARTIFACTS = {
     ],
 }
 
+AUDIO_ARTIFACT_KINDS = {
+    kind for entries in AUDIO_ARTIFACTS.values() for _, kind, _ in entries
+}
+
 
 class PipelineRunner(Protocol):
     async def spawn(self, job_id: str) -> None: ...

@@ -14,6 +14,10 @@ interface TimelineProps {
   tracks: EditorTrack[];
   muted: Record<string, boolean>;
   onToggleMute: (id: string) => void;
+  selectedTrackId: string;
+  onSelectTrack: (id: string) => void;
+  onDeleteTrack: (id: string) => void;
+  deletingTrackId?: string | null;
   duration: number;
   currentTime: number;
   getCurrentTime: () => number;
@@ -29,6 +33,7 @@ interface PeaksResponse {
 }
 
 const TRACK_OFFSET = 36;
+const SELECTION_COLOR = "#8ec0ee";
 
 interface TrackTone {
   wave: string;
@@ -125,6 +130,10 @@ export default function Timeline({
   tracks,
   muted,
   onToggleMute,
+  selectedTrackId,
+  onSelectTrack,
+  onDeleteTrack,
+  deletingTrackId = null,
   duration,
   currentTime,
   getCurrentTime,
@@ -138,6 +147,7 @@ export default function Timeline({
   const playheadRef = useRef<HTMLDivElement | null>(null);
   const scrubbingRef = useRef(false);
   const [scrubbing, setScrubbing] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
   const peaksQueries = useQueries({
     queries: tracks.map((track) => ({
@@ -243,7 +253,8 @@ export default function Timeline({
           </span>
         </div>
         <p className="text-[12px] text-on-surface-variant">
-          Drag the waves to scrub. Mute one layer to hear another.
+          Drag the waves to scrub. Click a track name to choose the effect input
+          (outlined). Mute one layer to hear another.
         </p>
       </div>
 
@@ -274,6 +285,7 @@ export default function Timeline({
                 const groupChanged =
                   index === 0 || tracks[index - 1].group !== track.group;
                 const isMuted = Boolean(muted[track.id]);
+                const isSelected = selectedTrackId === track.id;
                 const tone = TRACK_TONES[index % TRACK_TONES.length];
                 return (
                   <div key={track.id}>
@@ -304,35 +316,164 @@ export default function Timeline({
                         />
                       </button>
                       <div
-                        className={`relative h-10 min-w-0 flex-1 overflow-hidden rounded border ${
-                          isMuted ? "opacity-60" : ""
+                        className={`relative h-10 min-w-0 flex-1 overflow-hidden rounded border transition-[border-color] duration-150 ease-standard ${
+                          isMuted && !isSelected ? "opacity-60" : ""
                         }`}
                         style={{
-                          borderColor: tone.border,
+                          borderColor: isSelected ? SELECTION_COLOR : tone.border,
                           backgroundColor: tone.lane,
+                          outline: isSelected
+                            ? `2px solid ${SELECTION_COLOR}`
+                            : undefined,
+                          outlineOffset: isSelected ? "1px" : undefined,
                         }}
                       >
                         <Waveform peaks={peaks[index]} tone={tone} />
+                        {isSelected ? (
+                          <>
+                            <span
+                              className="pointer-events-none absolute inset-0"
+                              style={{
+                                backgroundColor: SELECTION_COLOR,
+                                opacity: 0.08,
+                              }}
+                            />
+                            <span
+                              className="pointer-events-none absolute inset-y-0 left-0 w-1"
+                              style={{ backgroundColor: SELECTION_COLOR }}
+                            />
+                          </>
+                        ) : null}
+                        {peaks[index].length < 2 ? (
+                          <div className="pointer-events-none absolute inset-0 grid place-items-center text-[11px] text-on-surface-variant">
+                            {peaksQueries[index]?.isError ? (
+                              <span>Waveform unavailable</span>
+                            ) : (
+                              <span className="flex items-center gap-2">
+                                <span className="spinner" aria-hidden="true" />
+                                Rendering waveform…
+                              </span>
+                            )}
+                          </div>
+                        ) : null}
                         <div className="pointer-events-none absolute inset-0 flex items-center justify-between gap-2 px-2">
-                          <span
-                            className={`max-w-[78%] truncate rounded bg-surface-container/90 px-1.5 py-0.5 text-[11px] font-medium ${
-                              isMuted
-                                ? "text-on-surface-variant"
-                                : "text-on-surface"
+                          <button
+                            type="button"
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onSelectTrack(track.id);
+                            }}
+                            aria-pressed={isSelected}
+                            aria-label={`Use ${track.label} as the effect input`}
+                            title="Effects apply to this track"
+                            className={`pointer-events-auto max-w-[78%] rounded px-1.5 py-0.5 text-left text-[11px] font-medium transition-colors duration-150 ease-standard ${
+                              isSelected
+                                ? ""
+                                : `bg-surface-container/90 hover:bg-surface-container-highest ${
+                                    isMuted
+                                      ? "text-on-surface-variant"
+                                      : "text-on-surface"
+                                  }`
                             }`}
+                            style={
+                              isSelected
+                                ? {
+                                    backgroundColor: SELECTION_COLOR,
+                                    color: "#0b0b0b",
+                                  }
+                                : undefined
+                            }
                           >
-                            {track.label}
-                          </span>
+                            <span className="flex min-w-0 items-center gap-1.5">
+                              {isSelected ? (
+                                <span
+                                  className="size-1.5 shrink-0 rounded-full bg-current"
+                                  aria-hidden="true"
+                                />
+                              ) : null}
+                              <span className="truncate">{track.label}</span>
+                            </span>
+                          </button>
                           {track.artifact ? (
-                            <a
-                              href={track.artifact.download_url}
-                              download
-                              onClick={(event) => event.stopPropagation()}
-                              aria-label={`Download ${track.label}`}
-                              className="pointer-events-auto shrink-0 rounded p-0.5 text-on-surface-variant transition-colors duration-150 ease-standard hover:bg-surface-container-high hover:text-on-surface"
-                            >
-                              <Icon name="download" size={14} />
-                            </a>
+                            <span className="pointer-events-auto flex shrink-0 items-center gap-0.5">
+                              {pendingDelete === track.id ? (
+                                <>
+                                  <span className="px-1 text-[10px] font-medium text-error">
+                                    Delete?
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onPointerDown={(event) =>
+                                      event.stopPropagation()
+                                    }
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setPendingDelete(null);
+                                      onDeleteTrack(track.id);
+                                    }}
+                                    aria-label={`Confirm deleting ${track.label}`}
+                                    className="rounded p-0.5 text-error transition-colors duration-150 ease-standard hover:bg-error-container"
+                                  >
+                                    <Icon name="check" size={14} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onPointerDown={(event) =>
+                                      event.stopPropagation()
+                                    }
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setPendingDelete(null);
+                                    }}
+                                    aria-label="Cancel delete"
+                                    className="rounded p-0.5 text-on-surface-variant transition-colors duration-150 ease-standard hover:bg-surface-container-high hover:text-on-surface"
+                                  >
+                                    <Icon name="close" size={14} />
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <a
+                                    href={track.artifact.download_url}
+                                    download
+                                    onPointerDown={(event) =>
+                                      event.stopPropagation()
+                                    }
+                                    onClick={(event) => event.stopPropagation()}
+                                    aria-label={`Download ${track.label}`}
+                                    className="rounded p-0.5 text-on-surface-variant transition-colors duration-150 ease-standard hover:bg-surface-container-high hover:text-on-surface"
+                                  >
+                                    <Icon name="download" size={14} />
+                                  </a>
+                                  <button
+                                    type="button"
+                                    disabled={deletingTrackId === track.id}
+                                    onPointerDown={(event) =>
+                                      event.stopPropagation()
+                                    }
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setPendingDelete(track.id);
+                                    }}
+                                    aria-label={`Delete ${track.label}`}
+                                    title="Delete track"
+                                    className="rounded p-0.5 text-on-surface-variant transition-colors duration-150 ease-standard hover:bg-error-container hover:text-error disabled:opacity-60"
+                                  >
+                                    <span className="grid size-3.5 place-items-center">
+                                      {deletingTrackId === track.id ? (
+                                        <span
+                                          className="spinner"
+                                          aria-hidden="true"
+                                        />
+                                      ) : (
+                                        <Icon name="delete" size={14} />
+                                      )}
+                                    </span>
+                                  </button>
+                                </>
+                              )}
+                            </span>
                           ) : null}
                         </div>
                       </div>

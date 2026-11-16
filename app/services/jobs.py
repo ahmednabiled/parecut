@@ -1,15 +1,18 @@
 from decimal import Decimal
+from pathlib import Path
 
 from fastapi import HTTPException, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.config import Settings
-from app.models import Job, User, UserProfile, utcnow
+from app.models import Job, JobArtifact, User, UserProfile, utcnow
 from app.schemas import EffectCreate, EffectName, JobCreate
 from app.services.credits import add_ledger_entry, reserve_minutes
+from app.services.pipeline import AUDIO_ARTIFACT_KINDS
 from app.services.stages import initial_stage_states
 from app.storage import ObjectStorage
 from parecut_engine.schemas import (
+    ArabicDialect,
     AudioFormat,
     PipelineConfig,
     StudioChain,
@@ -31,6 +34,7 @@ def effect_config(
     enhance_mix: float | None = None,
     studio: StudioChain | None = None,
     languages: list[TranscriptionLanguage] | None = None,
+    arabic_dialect: ArabicDialect | None = None,
     audio_format: AudioFormat | None = None,
 ) -> PipelineConfig:
     values = DRAFT_CONFIG.model_dump()
@@ -52,6 +56,8 @@ def effect_config(
         values["rough_cut"] = True
         if languages:
             values["transcription_languages"] = languages
+        if arabic_dialect is not None:
+            values["arabic_dialect"] = arabic_dialect
     return PipelineConfig.model_validate(values)
 
 
@@ -190,15 +196,46 @@ async def create_effect_run(
         data.enhance_mix,
         data.studio,
         data.languages,
+        data.arabic_dialect,
         data.audio_format,
     )
+
+    source_key = parent.source_r2_key
+    source_filename = parent.source_filename
+    if data.source_artifact_id:
+        artifact = await session.get(JobArtifact, data.source_artifact_id)
+        owner = (
+            await session.get(Job, artifact.job_id) if artifact is not None else None
+        )
+        if (
+            artifact is None
+            or owner is None
+            or (owner.id != parent.id and owner.parent_job_id != parent.id)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Source track not found",
+            )
+        if owner.status != "completed":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Source track is not ready",
+            )
+        if artifact.kind not in AUDIO_ARTIFACT_KINDS:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Source track is not an audio track",
+            )
+        source_key = artifact.r2_key
+        source_filename = Path(artifact.r2_key).name
+
     job = Job(
         user_id=user.id,
         parent_job_id=parent.id,
         effect=data.effect,
         status="queued",
-        source_filename=parent.source_filename,
-        source_r2_key=parent.source_r2_key,
+        source_filename=source_filename,
+        source_r2_key=source_key,
         duration_seconds=parent.duration_seconds,
         sample_rate=parent.sample_rate,
         fps=parent.fps,

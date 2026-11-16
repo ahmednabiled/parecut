@@ -34,6 +34,9 @@ Implemented:
 - real transcription with WhisperX 3.3.1 `large-v3-turbo` and English word alignment
 - mixed-language transcription: choose English/Arabic per run, transcribe once per
   selected language, then merge by script and confidence before speaker assignment
+- Arabic dialect transcription: choose Auto, Standard (MSA), Egyptian, Gulf,
+  Levantine, Maghrebi, or Iraqi. Arabic runs use a dialect-tuned Whisper
+  large-v3-turbo model and a dialect prompt; the choice is stored on the run
 - real enhancement with Resemble Enhance: 44.1 kHz restoration, bandwidth and body
   extension, a wet/dry mix, and GPU inference with CPU fallback
 - GPU inference for Resemble Enhance, Demucs, and DeepFilterNet by default, with a
@@ -83,6 +86,11 @@ track, costs no credits, and produces no artifacts. In `/jobs/:id`, effects are 
 from the inspector. Each effect is a child job (`parent_job_id` + `effect`) that
 reserves credits, runs only its own stages, and adds its output as a muted track; the
 source is never rewritten.
+
+Effects run against the track selected in the timeline. Select the original upload or
+any completed audio artifact (cleaned, enhanced, or a stem) before applying an effect,
+so a clean enhanced track can be transcribed or split into speaker stems without
+touching the original.
 
 The Enhance effect runs DeepFilterNet3 and Resemble Enhance. Its Studio polish panel is
 collapsed by default; expanding it exposes high-pass, body/mud/presence EQ, de-essing,
