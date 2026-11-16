@@ -92,9 +92,14 @@ needle = (
     "for op_name, builder in ALL_OPS.items():\n"
     "    op_compatible = builder.is_compatible()\n"
     "    compatible_ops[op_name] = op_compatible\n"
+    '    compatible_ops["deepspeed_not_implemented"] = False\n'
 )
 if needle in source:
-    path.write_text(source.replace(needle, ""))
+    path.write_text(
+        source.replace(
+            needle, 'compatible_ops["deepspeed_not_implemented"] = False\n'
+        )
+    )
 print("patched deepspeed op compatibility check")
 PY
 
