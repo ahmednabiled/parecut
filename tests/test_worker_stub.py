@@ -1,5 +1,7 @@
 import io
 import subprocess
+import sys
+import types
 import wave
 from pathlib import Path
 
@@ -670,3 +672,44 @@ def test_worker_transcribes_selected_languages_into_before_json():
     assert "Hello from the presenter." in before_json
     assert "مرحبا بالعالم." in before_json
     assert result["stages"]["transcribe"]["status"] == "completed"
+
+
+def test_deepfilternet_chunks_long_audio(monkeypatch, tmp_path):
+    torch = pytest.importorskip("torch")
+
+    import runpod_app.worker as worker
+
+    calls: list[int] = []
+    saved: dict[str, object] = {}
+
+    class FakeState:
+        def sr(self) -> int:
+            return 1000
+
+    def fake_load_audio(path: str, sr: int):
+        return torch.zeros(1, 5000), sr
+
+    def fake_enhance(model, state, audio):
+        calls.append(int(audio.shape[-1]))
+        return audio
+
+    def fake_save_audio(path: str, audio, sr: int) -> None:
+        saved["audio"] = audio
+
+    fake_module = types.ModuleType("df.enhance")
+    fake_module.enhance = fake_enhance
+    fake_module.load_audio = fake_load_audio
+    fake_module.save_audio = fake_save_audio
+    package = types.ModuleType("df")
+    package.enhance = fake_module
+    monkeypatch.setitem(sys.modules, "df", package)
+    monkeypatch.setitem(sys.modules, "df.enhance", fake_module)
+
+    monkeypatch.setattr(worker, "_get_model", lambda: (object(), FakeState()))
+    monkeypatch.setattr(worker, "DF_CHUNK_SECONDS", 2)
+    monkeypatch.setattr(worker, "DF_OVERLAP_SECONDS", 0.2)
+
+    worker._deepfilternet(tmp_path / "in.wav", tmp_path / "out.wav")
+
+    assert calls == [2000, 2000, 1400]
+    assert saved["audio"].shape[-1] == 5000

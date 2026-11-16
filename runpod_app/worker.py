@@ -64,6 +64,32 @@ _RAW_WHISPER_MODEL = None
 _ALIGN_MODELS: dict[str, tuple[Any, Any]] = {}
 _DEMUCS_MODEL = None
 _DEVICE_LOG: set[str] = set()
+_CUDA_OK: bool | None = None
+
+
+def _cuda_usable() -> bool:
+    """Probe CUDA with a real allocation, not just torch.cuda.is_available().
+
+    A host can report an available CUDA device while the allocator or NVML is
+    broken (for example a stale driver under MIG). Probing here lets every stage
+    fall back to CPU instead of failing the job.
+    """
+    global _CUDA_OK
+    if _CUDA_OK is not None:
+        return _CUDA_OK
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            _CUDA_OK = False
+            return False
+        torch.zeros(1, device="cuda")
+        torch.cuda.synchronize()
+        _CUDA_OK = True
+    except Exception as exc:  # noqa: BLE001 - any CUDA init failure means CPU
+        logger.warning("cuda probe failed, falling back to cpu: %s", exc)
+        _CUDA_OK = False
+    return _CUDA_OK
 
 
 @dataclass
@@ -84,6 +110,8 @@ class LanguageSegment:
 
 
 DEFAULT_GPU_STAGES = "noise_reduction,enhance,separate_music"
+DF_CHUNK_SECONDS = 120
+DF_OVERLAP_SECONDS = 2
 
 
 def _gpu_stages() -> set[str] | None:
@@ -113,7 +141,7 @@ def _device_for(stage: str) -> str:
         try:
             import torch
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            device = "cuda" if _cuda_usable() else "cpu"
             if device == "cuda" and "cuda_arch" not in _DEVICE_LOG:
                 _DEVICE_LOG.add("cuda_arch")
                 logger.info("cuda arch=%s", torch.cuda.get_arch_list())
@@ -231,18 +259,13 @@ def _encode_audio(content: bytes, workdir: Path, fmt: str, name: str) -> bytes:
 def _get_model():
     global _MODEL, _STATE
     if _MODEL is None or _STATE is None:
-        if not _stage_allows_gpu("noise_reduction"):
+        if _device_for("noise_reduction") != "cuda":
             # DeepFilterNet picks its own device; pin it before the model loads.
             import df.enhance as df_enhance
             import df.modules as df_modules
 
             df_enhance.get_device = lambda: "cpu"
             df_modules.get_device = lambda: "cpu"
-            if "noise_reduction" not in _DEVICE_LOG:
-                _DEVICE_LOG.add("noise_reduction")
-                logger.info("noise_reduction device=cpu")
-        else:
-            _device_for("noise_reduction")
 
         from df.enhance import init_df
 
@@ -253,12 +276,48 @@ def _get_model():
 
 
 def _deepfilternet(input_path: Path, output_path: Path) -> None:
+    import torch
     from df.enhance import enhance, load_audio, save_audio
 
     model, state = _get_model()
-    audio, _ = load_audio(str(input_path), sr=state.sr())
-    enhanced = enhance(model, state, audio)
-    save_audio(str(output_path), enhanced, state.sr())
+    sr = state.sr()
+    audio, _ = load_audio(str(input_path), sr=sr)
+
+    # DeepFilterNet runs one forward pass over the whole signal, so a long
+    # recording exhausts GPU memory. Process it in overlapping chunks and
+    # cross-fade the joins; the result is the same length as the input.
+    chunk = sr * DF_CHUNK_SECONDS
+    overlap = sr * DF_OVERLAP_SECONDS
+    total = audio.shape[-1]
+
+    if total <= chunk:
+        enhanced = enhance(model, state, audio)
+    else:
+        pieces: list[torch.Tensor] = []
+        position = 0
+        while position < total:
+            end = min(position + chunk, total)
+            segment = enhance(model, state, audio[..., position:end])
+            if pieces:
+                blend = min(overlap, pieces[-1].shape[-1], segment.shape[-1])
+                if blend > 0:
+                    fade = torch.linspace(0.0, 1.0, blend)
+                    tail = (
+                        pieces[-1][..., -blend:] * (1.0 - fade)
+                        + segment[..., :blend] * fade
+                    )
+                    pieces[-1] = torch.cat(
+                        [pieces[-1][..., :-blend], tail], dim=-1
+                    )
+                    segment = segment[..., blend:]
+            pieces.append(segment)
+            if end >= total:
+                break
+            position += chunk - overlap
+        logger.info("deepfilternet chunks=%d", len(pieces))
+        enhanced = torch.cat(pieces, dim=-1)
+
+    save_audio(str(output_path), enhanced, sr)
 
 
 def _resemble_enhance(input_path: Path, output_path: Path, mix: float) -> None:
