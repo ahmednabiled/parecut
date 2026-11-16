@@ -78,6 +78,26 @@ RUN pip uninstall -y triton \
         "librosa==0.10.1" \
         "resampy==0.4.2"
 
+# DeepSpeed checks whether its CUDA ops can be compiled on import, which needs a
+# toolkit this runtime image does not carry. Resemble only imports the training
+# classes, so mark the ops unavailable instead of probing for nvcc.
+RUN python - <<'PY'
+from pathlib import Path
+
+path = Path(
+    "/usr/local/lib/python3.11/site-packages/deepspeed/git_version_info.py"
+)
+source = path.read_text()
+needle = (
+    "for op_name, builder in ALL_OPS.items():\n"
+    "    op_compatible = builder.is_compatible()\n"
+    "    compatible_ops[op_name] = op_compatible\n"
+)
+if needle in source:
+    path.write_text(source.replace(needle, ""))
+print("patched deepspeed op compatibility check")
+PY
+
 RUN python - <<'PY'
 import deepspeed
 from resemble_enhance.enhancer.inference import enhance  # noqa: F401
