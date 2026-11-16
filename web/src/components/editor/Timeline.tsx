@@ -320,12 +320,10 @@ export default function Timeline({
                           isMuted && !isSelected ? "opacity-60" : ""
                         }`}
                         style={{
-                          borderColor: isSelected ? SELECTION_COLOR : tone.border,
+                          borderColor: isSelected
+                            ? "transparent"
+                            : tone.border,
                           backgroundColor: tone.lane,
-                          outline: isSelected
-                            ? `2px solid ${SELECTION_COLOR}`
-                            : undefined,
-                          outlineOffset: isSelected ? "1px" : undefined,
                         }}
                       >
                         <Waveform peaks={peaks[index]} tone={tone} />
@@ -339,8 +337,8 @@ export default function Timeline({
                               }}
                             />
                             <span
-                              className="pointer-events-none absolute inset-y-0 left-0 w-1"
-                              style={{ backgroundColor: SELECTION_COLOR }}
+                              className="pointer-events-none absolute inset-0 rounded border-2"
+                              style={{ borderColor: SELECTION_COLOR }}
                             />
                           </>
                         ) : null}
