@@ -87,7 +87,7 @@ Complete:
   cut plan
 - Real diarization: NVIDIA Nemotron-3-Diarization in an isolated Python venv
 - Speaker-attributed transcript fed into the before/after renderers and `ROUGH-CUT.md`
-- Endpoint release #18 pinned to `ghcr.io/ahmednabiled/parecut-worker:sha-49aba40`
+- Endpoint release #21 pinned to `ghcr.io/ahmednabiled/parecut-worker:sha-8c30a93`
 - R2 browser uploads proxied through FastAPI, with worker artifact uploads still using
   direct presigned R2 URLs; text artifacts served same-origin for previews and copy
 - Deterministic cut rules for restart false starts and same-speaker retakes; the
@@ -211,7 +211,7 @@ Worker image:
   `ghcr.io/ahmednabiled/parecut-worker:sha-<short>`.
 - The repository is private, so Runpod uses the `ghcr-parecut` registry credential with a
   GitHub PAT scoped to `read:packages`.
-- Endpoint release #18 runs `ghcr.io/ahmednabiled/parecut-worker:sha-49aba40`.
+- Endpoint release #21 runs `ghcr.io/ahmednabiled/parecut-worker:sha-8c30a93`.
 - The private pull was verified end to end: a fresh worker pulled the private image,
   processed jobs, and uploaded artifacts to R2.
 - The image bakes DeepFilterNet3, Resemble Enhance, WhisperX `large-v3-turbo`, the
@@ -483,6 +483,25 @@ The remaining limitation is language changes inside a single speech segment: the
 picks the stronger candidate for that segment, so a future per-segment LID or
 code-switch-aware ASR model would improve those cases.
 
+On 2026-11-16, release #21 (`sha-8c30a93`) moved the heavy audio stages to the GPU and
+compressed generated audio. Verified on the same 55.7s demo clip:
+
+- Worker image: PyTorch 2.7.1+cu128 and CTranslate2 4.6.3; the first GPU worker logged
+  `cuda arch=['sm_75', 'sm_80', 'sm_86', 'sm_90', 'sm_100', 'sm_120', 'compute_120']`
+  and `separate_music device=cuda`.
+- Music separation: 10.4 seconds of worker time on the PRO 6000 MIG. Stems are MP3
+  (`audio/mpeg`, 1.34 MB each) instead of 19.65 MB WAV, about 14.7x smaller.
+- Enhancement: 14.5 seconds, down from 107 seconds on CPU (about 7.4x). The artifact is
+  MP3 at 1.34 MB instead of 5.35 MB WAV.
+- Lossless option: re-running separation with WAV produced 19.65 MB `audio/wav` stems
+  with the RIFF header, so the per-run option works end to end.
+- Playback: the MP3 stem loaded metadata in under a second, played at full duration, and
+  sought to 30 seconds; an older WAV artifact still served as `audio/wav` and played.
+- Mixed-language transcription stays on CPU by default. GPU float16 changed the
+  two-pass merge and put Arabic over the English opening; the CPU path reproduced the
+  release #18 output (39 segments, English first, then Arabic). Add `transcribe` to
+  `PARECUT_GPU_STAGES` to opt into GPU transcription.
+
 Production serving was verified on the FastAPI process: `GET /` returns the built SPA,
 `GET /jobs/abc` returns the SPA for deep links, `/brand/login-logo.png` returns the
 brand asset, and `/api/does-not-exist` returns JSON 404.
@@ -541,7 +560,7 @@ The progress file itself adds one more documentation commit after these.
 
 1. Audition the Resemble-enhanced demo track and tune the wet mix or add a light
    presence/compression finishing chain only if it is needed. The Resemble worker is
-   live as release #18.
+   live as release #21.
 2. Replace the gated per-speaker stems with true target-speaker extraction
    (MossFormer2-SS) if the product needs overlapping-speech separation.
 3. Add per-segment language identification or a code-switch-aware ASR model and support
