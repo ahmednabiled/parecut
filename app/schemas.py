@@ -13,7 +13,7 @@ from parecut_engine.schemas import (
     TranscriptionLanguage,
 )
 
-FPS = Literal["24", "25", "29.97", "30", "60"]
+FPS = Literal["24", "25", "29.97", "30", "50", "60"]
 
 
 class UserRead(BaseModel):
@@ -128,7 +128,7 @@ class SpeakerRolesUpdate(BaseModel):
 
 class ProfileUpdate(BaseModel):
     full_name: str | None = Field(default=None, min_length=1)
-    default_fps: str | None = Field(default=None, pattern=r"^(24|25|29\.97|30|60)$")
+    default_fps: str | None = Field(default=None, pattern=r"^(24|25|29\.97|30|50|60)$")
     default_enhance_mix: int | None = Field(default=None, ge=0, le=100)
     default_silence_pad_ms: int | None = Field(default=None, ge=0, le=2000)
 

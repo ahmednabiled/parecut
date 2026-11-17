@@ -3,7 +3,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { apiFetch } from "../api/client";
 import type { ProfileResponse, SessionUser } from "../api/types";
 
-const FPS_OPTIONS = ["24", "25", "29.97", "30", "60"];
+const FPS_OPTIONS = ["24", "25", "29.97", "30", "50", "60"];
 
 const fieldClass =
   "h-12 w-full rounded border border-outline bg-transparent px-4 text-[15px] text-on-surface transition-[border-color,background-color] duration-150 ease-standard hover:border-on-surface-variant focus:border-on-surface";

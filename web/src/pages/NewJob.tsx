@@ -7,7 +7,7 @@ import Dropzone from "../components/Dropzone";
 import Panel from "../components/Panel";
 import { readAudioDuration, validateUploadFile } from "../lib/audio";
 
-const FPS_OPTIONS = ["24", "25", "29.97", "30", "60"];
+const FPS_OPTIONS = ["24", "25", "29.97", "30", "50", "60"];
 
 function putFile(
   xhr: XMLHttpRequest,

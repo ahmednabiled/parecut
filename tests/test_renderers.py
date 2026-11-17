@@ -15,6 +15,8 @@ def test_timecode_conversions():
     assert format_smpte(1.04, "25") == "00:00:01:01"
     assert format_clock(8.48) == "00:00:08.480"
     assert FPS_VALUES["29.97"] > 29.9
+    assert frame_number(1.0, "50") == 50
+    assert format_smpte(1.02, "50") == "00:00:01:01"
 
 
 def test_before_renderer_keeps_feeder_and_source_time():
