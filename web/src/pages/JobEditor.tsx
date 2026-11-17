@@ -46,6 +46,8 @@ interface TranscriptSource {
   artifact: Artifact;
 }
 
+type TranscriptVariant = "before" | "after";
+
 const EMPTY_EFFECTS: Job[] = [];
 
 function findArtifact(
@@ -64,25 +66,28 @@ function locateTranscript(
   project: Job | null,
   effects: Job[],
   selectedTrackId: string,
+  variant: TranscriptVariant,
 ): TranscriptSource | null {
   if (!project) return null;
   const sourceId = selectedTrackId === "original" ? null : selectedTrackId;
+  const kind = variant === "after" ? "transcript_after" : "transcript_before";
+  const fallbackKind =
+    variant === "after" ? "transcript_before" : "transcript_after";
 
   for (let index = effects.length - 1; index >= 0; index -= 1) {
     const run = effects[index];
     if (run.effect !== "transcribe" || run.status !== "completed") continue;
     if ((run.source_artifact_id ?? null) !== sourceId) continue;
     const artifact =
-      findArtifact(run, "transcript_after", "json") ??
-      findArtifact(run, "transcript_before", "json");
+      findArtifact(run, kind, "json") ?? findArtifact(run, fallbackKind, "json");
     if (artifact) return { job: run, artifact };
   }
 
   if (sourceId !== null) return null;
 
   const artifact =
-    findArtifact(project, "transcript_after", "json") ??
-    findArtifact(project, "transcript_before", "json");
+    findArtifact(project, kind, "json") ??
+    findArtifact(project, fallbackKind, "json");
   return artifact ? { job: project, artifact } : null;
 }
 
@@ -162,6 +167,8 @@ export default function JobEditor() {
   const queryClient = useQueryClient();
 
   const [chunkWords, setChunkWords] = useState(5);
+  const [transcriptVariant, setTranscriptVariant] =
+    useState<TranscriptVariant>("before");
   const [muted, setMuted] = useState<Record<string, boolean>>({});
   const [selectedTrackId, setSelectedTrackId] = useState("original");
   const [deletingTrackId, setDeletingTrackId] = useState<string | null>(null);
@@ -202,8 +209,8 @@ export default function JobEditor() {
   );
   const activeTrackId = selectedTrack?.id ?? "original";
   const transcriptSource = useMemo(
-    () => locateTranscript(project, effects, activeTrackId),
-    [project, effects, activeTrackId],
+    () => locateTranscript(project, effects, activeTrackId, transcriptVariant),
+    [project, effects, activeTrackId, transcriptVariant],
   );
   const speakerJob = useMemo(
     () => locateSpeakerJob(project, effects, activeTrackId),
@@ -581,6 +588,8 @@ export default function JobEditor() {
             loading={Boolean(transcriptSource) && transcriptQuery.isPending}
             error={transcriptQuery.isError}
             hasTranscript={Boolean(transcriptSource)}
+            variant={transcriptVariant}
+            onVariant={setTranscriptVariant}
           />
           <Timeline
             tracks={tracks}

@@ -17,6 +17,8 @@ interface ViewerProps {
   loading: boolean;
   error: boolean;
   hasTranscript: boolean;
+  variant: "before" | "after";
+  onVariant: (variant: "before" | "after") => void;
 }
 
 function cueForTime(cues: CaptionCue[], time: number): CaptionCue | null {
@@ -40,6 +42,8 @@ export default function Viewer({
   loading,
   error,
   hasTranscript,
+  variant,
+  onVariant,
 }: ViewerProps) {
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -64,10 +68,37 @@ export default function Viewer({
         <div>
           <h2 className="text-[15px] font-medium text-on-surface">Captions</h2>
           <p className="mt-1 text-[12px] text-on-surface-variant">
-            Follows the playhead. Fix a line, then download the caption file.
+            Follows the playhead. Full is the raw transcript; After cut applies
+            the cut plan.
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <div
+            role="group"
+            aria-label="Transcript version"
+            className="inline-flex h-8 items-center rounded-full border border-outline-variant bg-surface-container-low p-0.5"
+          >
+            {(
+              [
+                ["before", "Full"],
+                ["after", "After cut"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={variant === value}
+                onClick={() => onVariant(value)}
+                className={`h-7 rounded-full px-2.5 text-[11px] font-medium transition-colors duration-150 ease-standard ${
+                  variant === value
+                    ? "bg-primary text-on-primary"
+                    : "text-on-surface-variant hover:text-on-surface"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <span className="text-[12px] text-on-surface-variant">Words</span>
           <div
             role="group"
