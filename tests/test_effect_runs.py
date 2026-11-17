@@ -231,6 +231,7 @@ async def test_effect_uses_selected_source_artifact(app, client):
     )
     assert chained.status_code == 201, chained.text
     second = chained.json()
+    assert second["source_artifact_id"] == artifact_id
 
     async with app.state.sessionmaker() as session:
         source_artifact = await session.get(JobArtifact, artifact_id)
@@ -309,3 +310,38 @@ async def test_delete_project_artifact_keeps_project(app, client):
     assert (await client.delete(
         f"/api/jobs/{parent['id']}/artifacts/{artifact_id}"
     )).status_code == 404
+
+
+async def test_speaker_stem_transcription_keeps_its_speaker(app, client):
+    created = await _draft_job(client)
+    parent = created["job"]
+
+    async with app.state.sessionmaker() as session:
+        stem = JobArtifact(
+            job_id=parent["id"],
+            kind="stem_speaker",
+            label="Speaker 02 (gated)",
+            format="mp3",
+            r2_key="jobs/project/speaker_02.mp3",
+        )
+        session.add(stem)
+        await session.commit()
+        await session.refresh(stem)
+        stem_id = stem.id
+
+    response = await client.post(
+        f"/api/jobs/{parent['id']}/effects",
+        json={
+            "effect": "transcribe",
+            "languages": ["ar"],
+            "arabic_dialect": "egyptian",
+            "source_artifact_id": stem_id,
+        },
+    )
+    assert response.status_code == 201, response.text
+    child = response.json()
+    assert child["source_artifact_id"] == stem_id
+
+    async with app.state.sessionmaker() as session:
+        job = await session.get(Job, child["id"])
+        assert job.source_speaker == "SPEAKER_02"

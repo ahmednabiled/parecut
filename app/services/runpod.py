@@ -217,6 +217,7 @@ class RunpodPipelineRunner:
                     )
                 ),
                 "source_filename": job.source_filename,
+                "source_speaker": job.source_speaker,
                 "duration_seconds": job.duration_seconds,
                 "sample_rate": job.sample_rate,
                 "fps": job.fps,

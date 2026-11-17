@@ -63,17 +63,22 @@ function findArtifact(
 function locateTranscript(
   project: Job | null,
   effects: Job[],
+  selectedTrackId: string,
 ): TranscriptSource | null {
   if (!project) return null;
+  const sourceId = selectedTrackId === "original" ? null : selectedTrackId;
 
   for (let index = effects.length - 1; index >= 0; index -= 1) {
     const run = effects[index];
     if (run.effect !== "transcribe" || run.status !== "completed") continue;
+    if ((run.source_artifact_id ?? null) !== sourceId) continue;
     const artifact =
       findArtifact(run, "transcript_after", "json") ??
       findArtifact(run, "transcript_before", "json");
     if (artifact) return { job: run, artifact };
   }
+
+  if (sourceId !== null) return null;
 
   const artifact =
     findArtifact(project, "transcript_after", "json") ??
@@ -81,20 +86,24 @@ function locateTranscript(
   return artifact ? { job: project, artifact } : null;
 }
 
-function locateSpeakerJob(project: Job | null, effects: Job[]): Job | null {
+function locateSpeakerJob(
+  project: Job | null,
+  effects: Job[],
+  selectedTrackId: string,
+): Job | null {
   if (!project) return null;
+  const sourceId = selectedTrackId === "original" ? null : selectedTrackId;
 
   for (let index = effects.length - 1; index >= 0; index -= 1) {
     const run = effects[index];
-    if (
-      run.effect === "transcribe" &&
-      run.status === "completed" &&
-      Object.keys(run.speaker_roles ?? {}).length > 0
-    ) {
+    if (run.effect !== "transcribe" || run.status !== "completed") continue;
+    if ((run.source_artifact_id ?? null) !== sourceId) continue;
+    if (Object.keys(run.speaker_roles ?? {}).length > 0) {
       return run;
     }
   }
 
+  if (sourceId !== null) return null;
   return Object.keys(project.speaker_roles ?? {}).length > 0 ? project : null;
 }
 
@@ -183,14 +192,6 @@ export default function JobEditor() {
   const project = projectQuery.data ?? null;
   const effects = effectsQuery.data ?? EMPTY_EFFECTS;
 
-  const transcriptSource = useMemo(
-    () => locateTranscript(project, effects),
-    [project, effects],
-  );
-  const speakerJob = useMemo(
-    () => locateSpeakerJob(project, effects),
-    [project, effects],
-  );
   const tracks = useMemo(() => buildTracks(project, effects), [project, effects]);
   const selectedTrack = useMemo(
     () =>
@@ -198,6 +199,15 @@ export default function JobEditor() {
       tracks[0] ??
       null,
     [tracks, selectedTrackId],
+  );
+  const activeTrackId = selectedTrack?.id ?? "original";
+  const transcriptSource = useMemo(
+    () => locateTranscript(project, effects, activeTrackId),
+    [project, effects, activeTrackId],
+  );
+  const speakerJob = useMemo(
+    () => locateSpeakerJob(project, effects, activeTrackId),
+    [project, effects, activeTrackId],
   );
   const transcriptArtifact = transcriptSource?.artifact ?? null;
 
@@ -576,7 +586,7 @@ export default function JobEditor() {
             tracks={tracks}
             muted={mutedTracks}
             onToggleMute={handleToggleMute}
-            selectedTrackId={selectedTrack?.id ?? "original"}
+            selectedTrackId={activeTrackId}
             onSelectTrack={setSelectedTrackId}
             onDeleteTrack={handleDeleteTrack}
             deletingTrackId={deletingTrackId}

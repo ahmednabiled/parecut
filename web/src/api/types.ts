@@ -103,6 +103,7 @@ export interface Job {
   source_filename: string;
   source_url: string;
   source_peaks_url: string;
+  source_artifact_id: string | null;
   duration_seconds: number | null;
   sample_rate: number | null;
   fps: string;

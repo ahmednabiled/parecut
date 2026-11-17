@@ -328,7 +328,7 @@ def test_worker_runs_real_pipeline_stages():
     assert labels["cleaned_audio"] == "Denoised Audio (DeepFilterNet3)"
     assert labels["enhanced_audio"] == "Studio Enhanced Audio (Resemble Enhance)"
     assert labels["stem_music"] == "Music Stem (Demucs)"
-    assert speaker_labels == ["Speaker 01 (gated)", "Speaker 02 (gated)"]
+    assert speaker_labels == ["Speaker 00 (gated)", "Speaker 01 (gated)"]
     assert labels["transcript_before"] == "Transcript (Before Cut)"
     assert result["speaker_roles"] == {
         "SPEAKER_00": "presenter",

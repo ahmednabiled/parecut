@@ -55,6 +55,7 @@ class JobRead(BaseModel):
     source_filename: str
     source_url: str
     source_peaks_url: str
+    source_artifact_id: str | None = None
     duration_seconds: float | None = None
     sample_rate: int | None = None
     fps: str
@@ -160,6 +161,7 @@ def to_job_read(job, artifacts=()) -> JobRead:
         source_filename=job.source_filename,
         source_url=f"/api/jobs/{job.id}/source",
         source_peaks_url=f"/api/jobs/{job.id}/source/peaks",
+        source_artifact_id=job.source_artifact_id,
         duration_seconds=job.duration_seconds,
         sample_rate=job.sample_rate,
         fps=job.fps,

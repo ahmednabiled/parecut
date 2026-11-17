@@ -1055,7 +1055,12 @@ def _artifact_content(
     return source
 
 
-def _artifact_label(artifact: dict[str, str], *, studio: bool = False) -> str:
+def _artifact_label(
+    artifact: dict[str, str],
+    *,
+    studio: bool = False,
+    speaker: str | None = None,
+) -> str:
     kind = artifact["kind"]
     if kind == "cleaned_audio":
         return "Denoised Audio (DeepFilterNet3)"
@@ -1068,6 +1073,8 @@ def _artifact_label(artifact: dict[str, str], *, studio: bool = False) -> str:
     if kind == "stem_dialogue":
         return "Dialogue Stem (Demucs)"
     if kind == "stem_speaker":
+        if speaker:
+            return f"{speaker.replace('SPEAKER_', 'Speaker ')} (gated)"
         suffix = Path(artifact["key"]).stem.rsplit("_", 1)[-1]
         return f"Speaker {suffix} (gated)"
     if kind == "transcript_before":
@@ -1139,16 +1146,20 @@ def handler(
         turns: list[SpeakerTurn] = []
         diarization_fallback = False
         diarization_error: str | None = None
+        source_speaker = data.get("source_speaker")
         if config.transcribe or config.separate_speakers:
-            try:
-                turns = diarize_audio(working_wav, diarizer=diarizer)
-            except Exception as exc:
-                logger.exception("diarization failed; using one speaker")
-                diarization_fallback = True
-                diarization_error = f"{type(exc).__name__}: {exc}"
-            if not turns:
-                diarization_fallback = True
-                turns = [SpeakerTurn("SPEAKER_01", 0.0, duration)]
+            if source_speaker:
+                turns = [SpeakerTurn(str(source_speaker), 0.0, duration)]
+            else:
+                try:
+                    turns = diarize_audio(working_wav, diarizer=diarizer)
+                except Exception as exc:
+                    logger.exception("diarization failed; using one speaker")
+                    diarization_fallback = True
+                    diarization_error = f"{type(exc).__name__}: {exc}"
+                if not turns:
+                    diarization_fallback = True
+                    turns = [SpeakerTurn("SPEAKER_01", 0.0, duration)]
 
         transcript = Transcript(speakers=[], segments=[])
         if config.transcribe:
@@ -1183,6 +1194,7 @@ def handler(
             )
 
         speaker_outputs: dict[str, bytes] = {}
+        speaker_labels: dict[str, str] = {}
         if config.separate_speakers:
             tracks = gated_speaker_tracks(working_wav, turns)
             speaker_keys = [
@@ -1192,6 +1204,7 @@ def handler(
             ]
             for key, speaker in zip(speaker_keys, sorted(tracks)):
                 speaker_outputs[key] = tracks[speaker]
+                speaker_labels[key] = speaker
 
         outputs = data["outputs"]
         artifacts: list[dict[str, Any]] = []
@@ -1230,6 +1243,7 @@ def handler(
                         studio=(
                             config.enhance and config.studio_chain.enabled
                         ),
+                        speaker=speaker_labels.get(artifact["key"]),
                     ),
                     "format": artifact["format"],
                     "size_bytes": len(content),

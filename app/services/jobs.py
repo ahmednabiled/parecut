@@ -1,3 +1,4 @@
+import re
 from decimal import Decimal
 from pathlib import Path
 
@@ -202,6 +203,7 @@ async def create_effect_run(
 
     source_key = parent.source_r2_key
     source_filename = parent.source_filename
+    source_speaker: str | None = None
     if data.source_artifact_id:
         artifact = await session.get(JobArtifact, data.source_artifact_id)
         owner = (
@@ -228,6 +230,12 @@ async def create_effect_run(
             )
         source_key = artifact.r2_key
         source_filename = Path(artifact.r2_key).name
+        if artifact.kind == "stem_speaker":
+            match = re.search(
+                r"speaker[\s_-]*0*(\d+)", artifact.label or "", re.IGNORECASE
+            )
+            if match is not None:
+                source_speaker = f"SPEAKER_{int(match.group(1)):02d}"
 
     job = Job(
         user_id=user.id,
@@ -236,6 +244,8 @@ async def create_effect_run(
         status="queued",
         source_filename=source_filename,
         source_r2_key=source_key,
+        source_artifact_id=data.source_artifact_id,
+        source_speaker=source_speaker,
         duration_seconds=parent.duration_seconds,
         sample_rate=parent.sample_rate,
         fps=parent.fps,
