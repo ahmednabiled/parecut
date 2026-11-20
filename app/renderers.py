@@ -285,122 +285,52 @@ def _cell(value: str | None) -> str:
     return (value or "").replace("|", "\\|").replace("\n", " ")
 
 
-_ROLE_DISPLAY = {
-    "presenter": ("Presenter", "KEEP (Best Takes)", "On-camera talent"),
-    "feeder": ("Feeder / Director", "REMOVE ALL", "Off-camera line prompts"),
-    "cohost": ("Co-host", "KEEP", "Additional on-camera host"),
-}
-
-
-def render_rough_cut_md(
-    meta: RoughCutMeta, plan: list[CutRange], roles: dict[str, SpeakerRole]
-) -> str:
-    keeps = [range_ for range_ in plan if range_.action == "keep"]
-    removes = [range_ for range_ in plan if range_.action == "remove"]
-    kept_duration = sum(range_.end - range_.start for range_ in keeps)
-    removed = max(0.0, meta.duration_seconds - kept_duration)
-    percent_removed = (removed / meta.duration_seconds * 100) if meta.duration_seconds else 0.0
+def render_rough_cut_md(meta: RoughCutMeta, transcript: Transcript) -> str:
+    segments = sorted(transcript.segments, key=lambda item: (item.start, item.end))
     total_frames = frame_number(meta.duration_seconds, meta.fps)
     sample_rate = f"{meta.sample_rate} Hz" if meta.sample_rate else "unknown"
 
     lines: list[str] = [
-        "# PARECUT ROUGH-CUT SPECIFICATION",
+        "# PARECUT DETAILED TRANSCRIPTION",
         "",
-        "## 1. Source Media & Timeline Metadata",
+        "## Source Media",
         "",
         f"- **Source Filename:** `{meta.source_filename}`",
         f"- **Duration:** `{format_clock(meta.duration_seconds)}` (`{meta.duration_seconds:.3f}s` / `{total_frames} frames @ {meta.fps} fps`)",
         f"- **Frame Rate:** `{meta.fps} fps`",
         f"- **Sample Rate:** `{sample_rate}`",
-        f"- **Estimated Duration After Cut:** `{format_clock(kept_duration)}` (`{kept_duration:.3f}s`)",
-        f"- **Estimated Removal:** `{percent_removed:.1f}%` (`{removed:.3f}s`)",
-        "- **Recommended Audio Track:** `speaker_01_presenter_enhanced.wav`",
+        f"- **Segments:** `{len(segments)}`",
         "",
-        "## 2. Speaker Map",
+        "## Detailed Transcription",
         "",
-        "| Speaker ID | Assigned Role | Action | Notes |",
-        "|---|---|---|---|",
     ]
 
-    for speaker in sorted(roles):
-        role = roles[speaker]
-        display, action, notes = _ROLE_DISPLAY.get(role, _ROLE_DISPLAY["presenter"])
-        lines.append(f"| `{speaker}` | **{display}** | `{action}` | {notes} |")
+    if not segments:
+        lines.append("_No speech segments detected._")
+        lines.append("")
+        return "\n".join(lines)
 
     lines += [
-        "",
-        "## 3. Machine-Readable Cut List",
-        "",
-        "> **Note for Coding Agents:** Build the rough cut by appending the `KEEP` ranges in order onto a new timeline (ripple assembly), rather than making destructive in-place razor deletes from back to front. Both tables are provided so the host NLE API can use whichever approach it prefers.",
-        "",
-        "### 3.1 `KEEP` Ranges (Assemble in Order)",
-        "",
-        "| # | Source In (TC) | Source Out (TC) | Source In (Sec) | Source Out (Sec) | In Frame | Out Frame | New Timeline TC | Speaker | Text |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "| # | Start (Clock) | End (Clock) | Start (TC) | End (TC) | Start (Sec) | End (Sec) | In Frame | Out Frame | Speaker | Transcription |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
 
-    timeline_cursor = 0.0
-    for index, range_ in enumerate(keeps, start=1):
+    for index, segment in enumerate(segments, start=1):
         lines.append(
-            "| {i} | `{si}` | `{so}` | `{ss:.3f}` | `{es:.3f}` | `{inf}` | `{outf}` | `{ntc}` | `{spk}` | {text} |".format(
+            "| {i} | `{sc}` | `{ec}` | `{si}` | `{so}` | `{ss:.3f}` | `{es:.3f}` | `{inf}` | `{outf}` | `{spk}` | {text} |".format(
                 i=index,
-                si=format_smpte(range_.start, meta.fps),
-                so=format_smpte(range_.end, meta.fps),
-                ss=range_.start,
-                es=range_.end,
-                inf=frame_number(range_.start, meta.fps),
-                outf=frame_number(range_.end, meta.fps),
-                ntc=format_smpte(timeline_cursor, meta.fps),
-                spk=range_.speaker or "—",
-                text=_cell(range_.text),
-            )
-        )
-        timeline_cursor += range_.end - range_.start
-
-    lines += [
-        "",
-        "### 3.2 `REMOVE` Ranges (Trimmed / Cut Out from Original)",
-        "",
-        "| # | Source In (TC) | Source Out (TC) | Source In (Sec) | Source Out (Sec) | In Frame | Out Frame | Reason | Speaker | Transcript / Detail |",
-        "|---|---|---|---|---|---|---|---|---|---|",
-    ]
-    for index, range_ in enumerate(removes, start=1):
-        lines.append(
-            "| {i} | `{si}` | `{so}` | `{ss:.3f}` | `{es:.3f}` | `{inf}` | `{outf}` | `{reason}` | `{spk}` | {text} |".format(
-                i=index,
-                si=format_smpte(range_.start, meta.fps),
-                so=format_smpte(range_.end, meta.fps),
-                ss=range_.start,
-                es=range_.end,
-                inf=frame_number(range_.start, meta.fps),
-                outf=frame_number(range_.end, meta.fps),
-                reason=range_.reason,
-                spk=range_.speaker or "—",
-                text=_cell(range_.text) or ("Pre/post-roll dead air" if range_.reason == "SILENCE" else ""),
+                sc=format_clock(segment.start),
+                ec=format_clock(segment.end),
+                si=format_smpte(segment.start, meta.fps),
+                so=format_smpte(segment.end, meta.fps),
+                ss=segment.start,
+                es=segment.end,
+                inf=frame_number(segment.start, meta.fps),
+                outf=frame_number(segment.end, meta.fps),
+                spk=segment.speaker or "—",
+                text=_cell(segment.text),
             )
         )
 
-    lines += ["", "## 4. Full Chronological Audit Log", ""]
-    for range_ in plan:
-        if range_.action == "keep":
-            marker = f"✅ **KEEP ({range_.reason} — {range_.speaker}):**"
-        else:
-            speaker = f" — {range_.speaker}" if range_.speaker else ""
-            marker = f"❌ **REMOVE ({range_.reason}{speaker}):**"
-        lines.append(
-            f"- `[{format_clock(range_.start)} - {format_clock(range_.end)}]` {marker} {range_.text or ''}".rstrip()
-        )
-
-    lines += [
-        "",
-        "## 5. Ready-to-Use Coding Agent Instructions",
-        "",
-        "> Copy this file into your coding agent (Claude Code, Cursor, Codex, ChatGPT) and ask:",
-        ">",
-        '> - *"Write a DaVinci Resolve Python script (`DaVinciResolveScript`) that creates a new timeline named `Rough Cut` and appends the `KEEP` frame ranges from Section 3.1 using `mediaPool.AppendToTimeline`."*',
-        '> - *"Write an Adobe Premiere Pro ExtendScript (`.jsx`) or UXP script that builds a new sequence from the `KEEP` ranges in Section 3.1."*',
-        '> - *"Generate an FCPXML 1.10 or OpenTimelineIO (`.otio`) file from Section 3.1 that I can import directly into Resolve, Premiere, or Final Cut Pro."*',
-        "",
-    ]
-
+    lines.append("")
     return "\n".join(lines)

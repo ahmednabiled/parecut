@@ -316,8 +316,9 @@ def test_worker_runs_real_pipeline_stages():
     assert "SPEAKER_01" in before_json
 
     rough = uploaded[next(a["key"] for a in expected if a["kind"] == "rough_cut_md")]
-    assert b"PARECUT ROUGH-CUT SPECIFICATION" in rough
+    assert b"PARECUT DETAILED TRANSCRIPTION" in rough
     assert b"SPEAKER_00" in rough
+    assert b"Hello from the presenter." in rough
 
     labels = {artifact["kind"]: artifact["label"] for artifact in result["artifacts"]}
     speaker_labels = [

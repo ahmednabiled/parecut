@@ -152,7 +152,7 @@ async def write_cut_outputs(
         label=rough_label,
         fmt="md",
         key=f"{root}/ROUGH-CUT.md",
-        content=render_rough_cut_md(meta, plan, roles),
+        content=render_rough_cut_md(meta, transcript),
     )
 
 

@@ -1043,7 +1043,7 @@ def _artifact_content(
     if kind == "stem_speaker":
         return speaker_outputs.get(artifact["key"])
     if kind == "rough_cut_md":
-        return render_rough_cut_md(meta, plan, roles).encode()
+        return render_rough_cut_md(meta, transcript).encode()
     if kind == "transcript_before":
         return render_transcript(
             transcript, [], {}, meta.fps, variant="before", fmt=fmt

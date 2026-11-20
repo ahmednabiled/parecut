@@ -44,9 +44,9 @@ async def test_marking_feeder_removes_lines_from_after_cut(app, client):
     assert updated["speaker_roles"]["SPEAKER_02"] == "feeder"
     assert "SPEAKER_02" not in await _artifact_text(client, updated, "transcript_after")
     md = next(a for a in updated["artifacts"] if a["kind"] == "rough_cut_md")
-    assert "FEEDER_PROMPT" in (
-        await client.get(md["download_url"], follow_redirects=True)
-    ).text
+    md_text = (await client.get(md["download_url"], follow_redirects=True)).text
+    assert "# PARECUT DETAILED TRANSCRIPTION" in md_text
+    assert "FEEDER_PROMPT" not in md_text
 
 
 async def test_demo_job_keeps_demo_labels_after_regeneration(app, client):
