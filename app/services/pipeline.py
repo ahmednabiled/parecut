@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from decimal import Decimal
 from typing import Protocol
 
@@ -269,4 +270,5 @@ class MockPipelineRunner:
 
             await self._complete(job_id)
         except Exception:
+            logging.getLogger(__name__).exception("mock pipeline job %s failed", job_id)
             await self._fail(job_id)

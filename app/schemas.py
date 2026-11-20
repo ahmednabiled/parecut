@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from parecut_engine.schemas import (
     ArabicDialect,
@@ -89,6 +89,14 @@ class RegisterRequest(BaseModel):
     password: str = Field(min_length=8)
     full_name: str = Field(min_length=1)
 
+    @field_validator("full_name")
+    @classmethod
+    def _non_blank_name(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("full_name must not be blank")
+        return stripped
+
 
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -112,6 +120,18 @@ class JobCreate(BaseModel):
     draft: bool = False
 
 
+class JobUpdate(BaseModel):
+    source_filename: str = Field(min_length=1, max_length=255)
+
+    @field_validator("source_filename")
+    @classmethod
+    def _non_blank_filename(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("source_filename must not be blank")
+        return stripped
+
+
 class EffectCreate(BaseModel):
     effect: EffectName
     enhance_mix: float | None = Field(default=None, ge=0, le=1)
@@ -131,6 +151,16 @@ class ProfileUpdate(BaseModel):
     default_fps: str | None = Field(default=None, pattern=r"^(24|25|29\.97|30|50|60)$")
     default_enhance_mix: int | None = Field(default=None, ge=0, le=100)
     default_silence_pad_ms: int | None = Field(default=None, ge=0, le=2000)
+
+    @field_validator("full_name")
+    @classmethod
+    def _non_blank_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("full_name must not be blank")
+        return stripped
 
 
 def to_user_read(user) -> UserRead:

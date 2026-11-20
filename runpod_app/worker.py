@@ -988,7 +988,7 @@ def gated_speaker_tracks(
         params = reader.getparams()
         frames = reader.readframes(reader.getnframes())
 
-    width = params.sampwidth
+    width = params.sampwidth * params.nchannels
     total = len(frames) // width
     tracks: dict[str, bytes] = {}
 

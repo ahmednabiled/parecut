@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch } from "../api/client";
@@ -29,12 +29,31 @@ function formatDate(value: string): string {
 
 export default function Dashboard() {
   const { me } = useAuth();
+  const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const profileQuery = useQuery<ProfileResponse>({
     queryKey: ["profile"],
     queryFn: () => apiFetch<ProfileResponse>("/api/profile"),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (jobId: string) =>
+      apiFetch<void>(`/api/jobs/${jobId}`, { method: "DELETE" }),
+    onSuccess: () => {
+      setPendingDeleteId(null);
+      setDeleteError(null);
+      void queryClient.invalidateQueries({ queryKey: ["profile"] });
+    },
+    onError: (error) => {
+      setPendingDeleteId(null);
+      setDeleteError(
+        error instanceof Error ? error.message : "Could not delete project.",
+      );
+    },
   });
 
   const jobs = profileQuery.data?.jobs ?? [];
@@ -258,35 +277,96 @@ export default function Dashboard() {
             </button>
           </div>
         ) : (
-          <div className="mt-4 overflow-hidden rounded-xl border border-outline-variant bg-surface-container">
-            {filteredJobs.map((job, index) => (
-              <Link
-                key={job.id}
-                to={`/jobs/${job.id}`}
-                className="group grid grid-cols-[2rem_1fr_auto_auto] items-center gap-4 border-b border-outline-variant px-4 py-4 transition-colors duration-150 ease-standard last:border-b-0 hover:bg-surface-container-high"
+          <>
+            {deleteError ? (
+              <p
+                role="alert"
+                className="mt-4 rounded-lg border border-error/25 bg-error-container px-4 py-3 text-sm text-on-error-container"
               >
-                <span className="font-mono text-[12px] text-on-surface-variant">
-                  {String(index + 1).padStart(2, "0")}
-                </span>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-on-surface">
-                    {job.source_filename}
-                  </p>
-                  <p className="mt-1 truncate font-mono text-[12px] text-on-surface-variant">
-                    {job.fps} fps · {formatDuration(job.duration_seconds)} ·{" "}
-                    {job.artifacts.length} files
-                    <span className="hidden sm:inline"> · {formatDate(job.created_at)}</span>
-                  </p>
-                </div>
-                <StatusPill status={job.status} />
-                <Icon
-                  name="arrow_forward"
-                  size={16}
-                  className="text-on-surface-variant transition-transform duration-150 ease-standard group-hover:translate-x-0.5 group-hover:text-on-surface"
-                />
-              </Link>
-            ))}
-          </div>
+                {deleteError}
+              </p>
+            ) : null}
+            <div className="mt-4 overflow-hidden rounded-xl border border-outline-variant bg-surface-container">
+              {filteredJobs.map((job, index) => {
+                const isRunning =
+                  job.status === "queued" || job.status === "running";
+                const confirming = pendingDeleteId === job.id;
+                return (
+                  <div
+                    key={job.id}
+                    className="group flex items-center gap-2 border-b border-outline-variant pr-3 transition-colors duration-150 ease-standard last:border-b-0 hover:bg-surface-container-high"
+                  >
+                    <Link
+                      to={`/jobs/${job.id}`}
+                      className="grid min-w-0 flex-1 grid-cols-[2rem_1fr_auto] items-center gap-4 px-4 py-4"
+                    >
+                      <span className="font-mono text-[12px] text-on-surface-variant">
+                        {String(index + 1).padStart(2, "0")}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-on-surface">
+                          {job.source_filename}
+                        </p>
+                        <p className="mt-1 truncate font-mono text-[12px] text-on-surface-variant">
+                          {job.fps} fps · {formatDuration(job.duration_seconds)} ·{" "}
+                          {job.artifacts.length} files
+                          <span className="hidden sm:inline">
+                            {" "}
+                            · {formatDate(job.created_at)}
+                          </span>
+                        </p>
+                      </div>
+                      <StatusPill status={job.status} />
+                    </Link>
+
+                    {confirming ? (
+                      <div className="flex shrink-0 items-center gap-1 rounded-full border border-error/30 bg-error-container px-2 py-0.5">
+                        <span className="text-[11px] font-medium text-on-error-container">
+                          Delete?
+                        </span>
+                        <button
+                          type="button"
+                          disabled={deleteMutation.isPending}
+                          onClick={() => deleteMutation.mutate(job.id)}
+                          aria-label={`Confirm deleting ${job.source_filename}`}
+                          className="grid size-6 place-items-center rounded-full text-on-error-container hover:bg-error/20"
+                        >
+                          <Icon name="check" size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={deleteMutation.isPending}
+                          onClick={() => setPendingDeleteId(null)}
+                          aria-label="Cancel delete"
+                          className="grid size-6 place-items-center rounded-full text-on-error-container hover:bg-error/20"
+                        >
+                          <Icon name="close" size={14} />
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={isRunning || deleteMutation.isPending}
+                        onClick={() => {
+                          setDeleteError(null);
+                          setPendingDeleteId(job.id);
+                        }}
+                        aria-label={`Delete ${job.source_filename}`}
+                        title={
+                          isRunning
+                            ? "Wait for processing to finish before deleting"
+                            : "Delete project"
+                        }
+                        className="grid size-8 shrink-0 place-items-center rounded-full text-on-surface-variant opacity-60 transition-all duration-150 ease-standard hover:bg-error-container hover:text-error hover:opacity-100 group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-30"
+                      >
+                        <Icon name="delete" size={15} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>
         )}
       </section>
     </div>

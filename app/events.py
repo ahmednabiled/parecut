@@ -30,6 +30,8 @@ class _Subscription:
         subscribers = self._broker._subscribers.get(self._job_id)
         if subscribers is not None:
             subscribers.discard(self._queue)
+            if not subscribers:
+                self._broker._subscribers.pop(self._job_id, None)
 
 
 class InMemoryEventBroker:

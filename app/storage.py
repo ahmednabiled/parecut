@@ -3,9 +3,11 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 import subprocess
+import tempfile
 import time
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import quote
@@ -27,8 +29,20 @@ class InvalidToken(Exception):
     pass
 
 
+class UploadTooLarge(Exception):
+    pass
+
+
 class ObjectStorage(Protocol):
     async def put(self, key: str, data: bytes, content_type: str) -> None: ...
+
+    async def put_stream(
+        self,
+        key: str,
+        chunks: AsyncIterator[bytes],
+        content_type: str,
+        max_bytes: int,
+    ) -> int: ...
 
     async def get(self, key: str) -> bytes: ...
 
@@ -39,6 +53,8 @@ class ObjectStorage(Protocol):
     async def copy(self, src_key: str, dst_key: str) -> None: ...
 
     async def delete(self, key: str) -> None: ...
+
+    async def list_objects(self, prefix: str) -> list[tuple[str, float]]: ...
 
     async def exists(self, key: str) -> bool: ...
 
@@ -156,6 +172,32 @@ class LocalObjectStorage:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
 
+    async def put_stream(
+        self,
+        key: str,
+        chunks: AsyncIterator[bytes],
+        content_type: str,
+        max_bytes: int,
+    ) -> int:
+        path = self._path(key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        part = path.with_name(f".{path.name}.part")
+        total = 0
+        try:
+            with part.open("wb") as handle:
+                async for chunk in chunks:
+                    if not chunk:
+                        continue
+                    total += len(chunk)
+                    if total > max_bytes:
+                        raise UploadTooLarge("File exceeds the maximum upload size")
+                    await asyncio.to_thread(handle.write, chunk)
+            await asyncio.to_thread(os.replace, part, path)
+        except Exception:
+            part.unlink(missing_ok=True)
+            raise
+        return total
+
     async def get(self, key: str) -> bytes:
         return self._path(key).read_bytes()
 
@@ -184,6 +226,21 @@ class LocalObjectStorage:
 
     async def delete(self, key: str) -> None:
         self._path(key).unlink(missing_ok=True)
+
+    async def list_objects(self, prefix: str) -> list[tuple[str, float]]:
+        def _scan() -> list[tuple[str, float]]:
+            base = self._path(prefix) if prefix else self.root
+            if not base.exists():
+                return []
+            results: list[tuple[str, float]] = []
+            for path in base.rglob("*"):
+                if not path.is_file() or path.name.endswith(".part"):
+                    continue
+                rel = path.relative_to(self.root).as_posix()
+                results.append((rel, path.stat().st_mtime))
+            return results
+
+        return await asyncio.to_thread(_scan)
 
     async def exists(self, key: str) -> bool:
         return self._path(key).is_file()
@@ -266,6 +323,36 @@ class R2ObjectStorage:
             ContentType=content_type,
         )
 
+    async def put_stream(
+        self,
+        key: str,
+        chunks: AsyncIterator[bytes],
+        content_type: str,
+        max_bytes: int,
+    ) -> int:
+        total = 0
+        with tempfile.SpooledTemporaryFile(max_size=16 * 1024 * 1024) as spool:
+            async for chunk in chunks:
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > max_bytes:
+                    raise UploadTooLarge("File exceeds the maximum upload size")
+                await asyncio.to_thread(spool.write, chunk)
+            spool.seek(0)
+            if hasattr(self._client, "upload_fileobj"):
+                await asyncio.to_thread(
+                    self._client.upload_fileobj,
+                    spool,
+                    self.bucket,
+                    key,
+                    ExtraArgs={"ContentType": content_type},
+                )
+            else:
+                data = await asyncio.to_thread(spool.read)
+                await self.put(key, data, content_type)
+        return total
+
     async def get(self, key: str) -> bytes:
         response = await asyncio.to_thread(
             self._client.get_object, Bucket=self.bucket, Key=key
@@ -310,6 +397,34 @@ class R2ObjectStorage:
             self._client.delete_object, Bucket=self.bucket, Key=key
         )
 
+    async def list_objects(self, prefix: str) -> list[tuple[str, float]]:
+        def _list() -> list[tuple[str, float]]:
+            results: list[tuple[str, float]] = []
+            token: str | None = None
+            while True:
+                kwargs: dict[str, Any] = {"Bucket": self.bucket, "Prefix": prefix}
+                if token:
+                    kwargs["ContinuationToken"] = token
+                response = self._client.list_objects_v2(**kwargs)
+                for item in response.get("Contents", []):
+                    key = item.get("Key")
+                    modified = item.get("LastModified")
+                    if isinstance(key, str) and modified is not None:
+                        ts = (
+                            modified.timestamp()
+                            if hasattr(modified, "timestamp")
+                            else float(modified)
+                        )
+                        results.append((key, ts))
+                if not response.get("IsTruncated"):
+                    break
+                token = response.get("NextContinuationToken")
+                if not token:
+                    break
+            return results
+
+        return await asyncio.to_thread(_list)
+
     async def exists(self, key: str) -> bool:
         try:
             await asyncio.to_thread(
@@ -346,12 +461,13 @@ class R2ObjectStorage:
         )
 
     def signed_download_url(self, key: str, filename: str, ttl_seconds: int) -> str:
+        safe_filename = filename.replace('"', "").replace("\r", "").replace("\n", "")
         return self._client.generate_presigned_url(
             "get_object",
             Params={
                 "Bucket": self.bucket,
                 "Key": key,
-                "ResponseContentDisposition": f'attachment; filename="{filename}"',
+                "ResponseContentDisposition": f'attachment; filename="{safe_filename}"',
             },
             ExpiresIn=ttl_seconds,
         )

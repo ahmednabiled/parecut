@@ -69,7 +69,11 @@ RETAKE_WINDOW_SECONDS = 30.0
 
 
 def _normalized_words(text: str) -> list[str]:
-    return re.findall(r"[a-z0-9']+", text.lower())
+    return [
+        word
+        for word in re.findall(r"[^\W_]+(?:'[^\W_]+)*", text.lower())
+        if word
+    ]
 
 
 def _is_restart(text: str) -> bool:
@@ -88,11 +92,11 @@ def _is_prefix(earlier: str, later: str) -> bool:
 
 
 def _similarity(first: str, second: str) -> float:
-    return SequenceMatcher(
-        None,
-        " ".join(_normalized_words(first)),
-        " ".join(_normalized_words(second)),
-    ).ratio()
+    left = " ".join(_normalized_words(first))
+    right = " ".join(_normalized_words(second))
+    if not left or not right:
+        return 0.0
+    return SequenceMatcher(None, left, right).ratio()
 
 
 def _false_start_indices(segments) -> set[int]:
@@ -237,7 +241,7 @@ def _markdown_output(entries: list[Entry], roles: dict[str, SpeakerRole], *, var
     lines = [title, ""]
     for speaker, text, source_start, source_end, timeline_start, timeline_end in entries:
         speaker_name = speaker or "—"
-        role = roles.get(speaker_name, "presenter") if speaker != "—" else "—"
+        role = roles.get(speaker_name, "presenter") if speaker_name != "—" else "—"
         if variant == "before":
             timing = f"{format_clock(source_start)} – {format_clock(source_end)}"
         else:

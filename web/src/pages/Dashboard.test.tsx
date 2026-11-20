@@ -137,4 +137,44 @@ describe("Dashboard", () => {
     expect(screen.getByText("podcast_ep12.wav")).toBeInTheDocument();
     expect(screen.getByText("documentary_broll.mp4")).toBeInTheDocument();
   });
+
+  it("deletes a project after inline confirmation", async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "DELETE" && url === "/api/jobs/j1") {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify(PROFILE_PAYLOAD), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <Dashboard />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("podcast_ep12.wav")).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Delete podcast_ep12.wav" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Confirm deleting podcast_ep12.wav" }),
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/jobs/j1",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+  });
 });

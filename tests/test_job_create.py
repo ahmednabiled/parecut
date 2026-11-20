@@ -90,3 +90,21 @@ async def test_unknown_duration_reserves_minimum(app, client):
     )
     assert response.status_code == 201
     assert response.json()["duration_seconds"] is None
+
+
+async def test_create_job_rejects_other_users_upload_key(app, client):
+    await register(client, email="victim@example.com")
+    victim_key = await upload(client, make_wav(2))
+    await client.post("/api/auth/logout")
+
+    await register(client, email="attacker@example.com")
+    response = await client.post(
+        "/api/jobs",
+        json={
+            "upload_key": victim_key,
+            "source_filename": "stolen.wav",
+            "fps": "25",
+            "draft": True,
+        },
+    )
+    assert response.status_code == 404

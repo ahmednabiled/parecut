@@ -80,4 +80,109 @@ describe("Inspector audio output", () => {
     expect(args[0]).toBe("transcribe");
     expect(args[5]).toBe("egyptian");
   });
+
+  it("links raw transcript_before SRT and VTT instead of transcript_after", () => {
+    const transcriptJob = {
+      id: "run-1",
+      parent_job_id: "proj-1",
+      effect: "transcribe" as const,
+      status: "completed" as const,
+      source_filename: "clip.wav",
+      source_url: "/api/jobs/run-1/source",
+      source_peaks_url: "/api/jobs/run-1/source/peaks",
+      source_artifact_id: null,
+      duration_seconds: 10,
+      sample_rate: 48000,
+      fps: "25",
+      pipeline_config: {
+        noise_reduction: false,
+        enhance: false,
+        enhance_mix: 0.8,
+        studio_chain: DEFAULT_STUDIO,
+        separate_music: false,
+        separate_speakers: false,
+        transcribe: true,
+        rough_cut: true,
+        transcription_languages: ["en" as const],
+        arabic_dialect: "auto" as const,
+        audio_format: "mp3" as const,
+      },
+      speaker_roles: {},
+      stage_states: {},
+      error_code: null,
+      created_at: "2026-11-20T00:00:00Z",
+      started_at: null,
+      completed_at: null,
+      artifacts: [
+        {
+          id: "before-srt",
+          kind: "transcript_before",
+          label: "Transcript (Before Cut)",
+          format: "srt",
+          size_bytes: 10,
+          download_url: "/api/jobs/run-1/artifacts/before-srt/download",
+          content_url: "/api/jobs/run-1/artifacts/before-srt/content",
+          peaks_url: "/api/jobs/run-1/artifacts/before-srt/peaks",
+        },
+        {
+          id: "after-srt",
+          kind: "transcript_after",
+          label: "Transcript (After Cut)",
+          format: "srt",
+          size_bytes: 10,
+          download_url: "/api/jobs/run-1/artifacts/after-srt/download",
+          content_url: "/api/jobs/run-1/artifacts/after-srt/content",
+          peaks_url: "/api/jobs/run-1/artifacts/after-srt/peaks",
+        },
+        {
+          id: "before-vtt",
+          kind: "transcript_before",
+          label: "Transcript (Before Cut)",
+          format: "vtt",
+          size_bytes: 10,
+          download_url: "/api/jobs/run-1/artifacts/before-vtt/download",
+          content_url: "/api/jobs/run-1/artifacts/before-vtt/content",
+          peaks_url: "/api/jobs/run-1/artifacts/before-vtt/peaks",
+        },
+        {
+          id: "after-vtt",
+          kind: "transcript_after",
+          label: "Transcript (After Cut)",
+          format: "vtt",
+          size_bytes: 10,
+          download_url: "/api/jobs/run-1/artifacts/after-vtt/download",
+          content_url: "/api/jobs/run-1/artifacts/after-vtt/content",
+          peaks_url: "/api/jobs/run-1/artifacts/after-vtt/peaks",
+        },
+      ],
+    };
+
+    render(
+      <Inspector
+        effects={[]}
+        applying={null}
+        onApply={vi.fn()}
+        inputLabel="Original audio"
+        error={null}
+        shortfall={null}
+        transcriptJob={transcriptJob}
+        speakerJob={null}
+        onSpeakerUpdated={() => {}}
+        defaultMix={0.8}
+        defaultStudio={DEFAULT_STUDIO}
+        defaultLanguages={["en"]}
+        defaultAudioFormat="mp3"
+        defaultDialect="auto"
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: "SRT" })).toHaveAttribute(
+      "href",
+      "/api/jobs/run-1/artifacts/before-srt/download",
+    );
+    expect(screen.getByRole("link", { name: "VTT" })).toHaveAttribute(
+      "href",
+      "/api/jobs/run-1/artifacts/before-vtt/download",
+    );
+  });
 });

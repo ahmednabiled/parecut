@@ -137,14 +137,21 @@ async def seed_demo(
 async def reconcile_orphan_jobs(
     sessionmaker: async_sessionmaker,
     settings: Settings,
+    runner=None,
 ) -> None:
+    resumable_ids: list[str] = []
     async with sessionmaker() as session:
         orphaned = (
             await session.exec(
                 select(Job).where(Job.status.in_(["queued", "running"]))
             )
         ).all()
+        can_resume = runner is not None and hasattr(runner, "spawn_resume")
         for job in orphaned:
+            if can_resume and job.runpod_job_id:
+                resumable_ids.append(job.id)
+                continue
+
             existing_refund = (
                 await session.exec(
                     select(CreditLedger).where(
@@ -170,3 +177,6 @@ async def reconcile_orphan_jobs(
                     )
 
         await session.commit()
+
+    for job_id in resumable_ids:
+        await runner.spawn_resume(job_id)

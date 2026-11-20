@@ -70,7 +70,7 @@ export default function Settings() {
       });
       queryClient.setQueryData(["profile"], data);
       queryClient.setQueryData<SessionUser | undefined>(["me"], (current) =>
-        current ? { ...current, profile: data.profile } : current,
+        current ? { ...current, user: data.user, profile: data.profile } : current,
       );
       setNotice("Settings saved.");
     } catch {

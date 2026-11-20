@@ -31,10 +31,21 @@ export function useTimelineAudio(
   const lastUiRef = useRef(0);
   const seekTargetRef = useRef<number | null>(null);
   const seekStartedRef = useRef(0);
+  const lastResyncRef = useRef(new Map<string, number>());
+  const mutedRef = useRef(muted);
+  const isPlayingRef = useRef(false);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [levels, setLevels] = useState<Levels>({ left: 0, right: 0 });
+
+  useEffect(() => {
+    mutedRef.current = muted;
+  }, [muted]);
+
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
 
   const tracksKey = tracks.map((track) => track.id).join("|");
 
@@ -106,17 +117,42 @@ export function useTimelineAudio(
           displayTime = seekTarget;
         }
       } else if (!master.paused) {
-        for (const element of elements.current.values()) {
-          if (
-            element === master ||
-            element.paused ||
-            element.seeking ||
-            Math.abs(element.currentTime - master.currentTime) <= 0.1
-          ) {
+        const nowMs = performance.now();
+        for (const [id, element] of elements.current.entries()) {
+          if (element === master || element.seeking || element.ended) {
             continue;
           }
+          if (element.paused) {
+            if (element.readyState >= 2) {
+              const last = lastResyncRef.current.get(id) ?? 0;
+              if (nowMs - last > 500) {
+                lastResyncRef.current.set(id, nowMs);
+                try {
+                  element.currentTime = Math.min(
+                    master.currentTime,
+                    element.duration || master.currentTime,
+                  );
+                } catch {
+                  // Element may not be seekable yet.
+                }
+                void element.play().catch(() => undefined);
+              }
+            }
+            continue;
+          }
+          if (Math.abs(element.currentTime - master.currentTime) <= 0.15) {
+            continue;
+          }
+          const last = lastResyncRef.current.get(id) ?? 0;
+          if (nowMs - last < 600) {
+            continue;
+          }
+          lastResyncRef.current.set(id, nowMs);
           try {
-            element.currentTime = master.currentTime;
+            element.currentTime = Math.min(
+              master.currentTime,
+              element.duration || master.currentTime,
+            );
           } catch {
             // The element may not be seekable yet.
           }
@@ -187,12 +223,12 @@ export function useTimelineAudio(
         }
       }
       const gain = gainsRef.current.get(id);
-      if (gain) gain.gain.value = muted[id] ? 0 : 1;
+      if (gain) gain.gain.value = mutedRef.current[id] ? 0 : 1;
       element.muted = false;
       element.volume = 1;
     }
     return context;
-  }, [muted]);
+  }, []);
 
   const play = useCallback(async () => {
     const context = ensureGraph();
@@ -274,17 +310,46 @@ export function useTimelineAudio(
 
   useEffect(() => {
     if (!isPlaying) return;
-    const master = masterRef.current;
-    for (const element of elements.current.values()) {
-      if (!element.paused) continue;
-      try {
-        if (master) element.currentTime = master.currentTime;
-      } catch {
-        // The element may not be seekable yet.
-      }
-      void element.play().catch(() => undefined);
+    const context = ensureGraph();
+    if (context && context.state === "suspended") {
+      void context.resume().catch(() => undefined);
     }
-  }, [tracksKey, isPlaying]);
+    const master = masterRef.current;
+    const cleanups: (() => void)[] = [];
+
+    for (const element of elements.current.values()) {
+      const syncAndPlay = () => {
+        if (!isPlayingRef.current) return;
+        try {
+          if (master && element !== master) {
+            element.currentTime = Math.min(
+              master.currentTime,
+              element.duration || master.currentTime,
+            );
+          }
+        } catch {
+          // The element may not be seekable yet.
+        }
+        void element.play().catch(() => undefined);
+      };
+
+      if (element.readyState < 1) {
+        element.addEventListener("loadedmetadata", syncAndPlay, { once: true });
+        cleanups.push(() =>
+          element.removeEventListener("loadedmetadata", syncAndPlay),
+        );
+        continue;
+      }
+
+      if (element.paused && !element.ended) {
+        syncAndPlay();
+      }
+    }
+
+    return () => {
+      for (const cleanup of cleanups) cleanup();
+    };
+  }, [tracksKey, isPlaying, ensureGraph]);
 
   useEffect(() => {
     for (const [id, gain] of gainsRef.current) {

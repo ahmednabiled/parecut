@@ -1,5 +1,6 @@
 import asyncio
 
+from app.services.pipeline import NullPipelineRunner
 from parecut_engine.schemas import JobEvent
 from tests.helpers import make_wav, register, upload
 
@@ -14,6 +15,7 @@ async def _collect(client, job_id: str) -> list[str]:
 
 
 async def test_sse_sends_snapshot_then_live_event(app, client):
+    app.state.runner = NullPipelineRunner()
     await register(client)
     key = await upload(client, make_wav(2))
     created = await client.post(

@@ -614,11 +614,11 @@ export default function Inspector({
 
   const srt = transcriptJob?.artifacts.find(
     (artifact) =>
-      artifact.kind === "transcript_after" && artifact.format === "srt",
+      artifact.kind === "transcript_before" && artifact.format === "srt",
   );
   const vtt = transcriptJob?.artifacts.find(
     (artifact) =>
-      artifact.kind === "transcript_after" && artifact.format === "vtt",
+      artifact.kind === "transcript_before" && artifact.format === "vtt",
   );
   const roughCut = transcriptJob?.artifacts.find(
     (artifact) => artifact.kind === "rough_cut_md",
@@ -750,8 +750,8 @@ export default function Inspector({
         </h2>
         <p className="mt-1 text-[12px] leading-5 text-on-surface-variant">
           {transcriptJob
-            ? "Raw outputs from the transcription run. Captions in the viewer can be corrected before download."
-            : "Apply Transcribe & rough cut to produce captions and the cut plan."}
+            ? "Raw outputs for the original source file (all speakers). The viewer SRT downloads captions for the selected track."
+            : "Apply Transcribe & rough cut to produce captions and the detailed transcription."}
         </p>
 
         {srt || vtt || roughCut ? (
@@ -775,7 +775,11 @@ export default function Inspector({
             outputs.
           </p>
           {speakerJob ? (
-            <SpeakerRoles job={speakerJob} onUpdated={onSpeakerUpdated} />
+            <SpeakerRoles
+              key={speakerJob.id}
+              job={speakerJob}
+              onUpdated={onSpeakerUpdated}
+            />
           ) : (
             <p className="text-[13px] leading-5 text-on-surface-variant">
               Speaker roles appear after transcription finishes.

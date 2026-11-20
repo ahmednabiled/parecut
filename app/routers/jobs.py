@@ -23,6 +23,7 @@ from app.schemas import (
     EffectCreate,
     JobCreate,
     JobRead,
+    JobUpdate,
     SpeakerRolesUpdate,
     to_job_read,
 )
@@ -101,7 +102,7 @@ def range_bounds(value: str | None, total: int) -> tuple[int, int] | None:
     except ValueError:
         return None
 
-    if start >= total:
+    if start < 0 or start >= total:
         raise HTTPException(
             status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE,
             headers={"Content-Range": f"bytes */{total}"},
@@ -119,11 +120,16 @@ async def media_response(
     media_type: str,
     filename: str,
 ) -> Response:
+    if not await storage.exists(key):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found"
+        )
     total = await storage.size(key)
     bounds = range_bounds(request.headers.get("range"), total)
+    safe_filename = filename.replace('"', "").replace("\r", "").replace("\n", "")
     headers = {
         "Accept-Ranges": "bytes",
-        "Content-Disposition": f'inline; filename="{filename}"',
+        "Content-Disposition": f'inline; filename="{safe_filename}"',
     }
     if total <= 0:
         return Response(content=b"", media_type=media_type, headers=headers)
@@ -221,6 +227,10 @@ async def peaks_payload(
         # A missing or unreadable cache must never block the waveform.
         pass
 
+    if not await storage.exists(key):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found"
+        )
     data = await storage.get(key)
     peaks = await asyncio.to_thread(compute_peaks, data, points)
     PEAKS_CACHE[cache_key] = peaks
@@ -304,6 +314,84 @@ async def get_job(
         )
     ).all()
     return to_job_read(job, artifacts)
+
+
+@router.patch("/{job_id}", response_model=JobRead)
+async def update_job(
+    job_id: str,
+    payload: JobUpdate,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> JobRead:
+    job = await load_job(session, user, job_id)
+    if job.parent_job_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Only projects can be renamed",
+        )
+    job.source_filename = payload.source_filename
+    session.add(job)
+    await session.commit()
+    artifacts = (
+        await session.exec(
+            select(JobArtifact)
+            .where(JobArtifact.job_id == job.id)
+            .order_by(JobArtifact.created_at)
+        )
+    ).all()
+    return to_job_read(job, artifacts)
+
+
+@router.delete("/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_job(
+    job_id: str,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    storage: ObjectStorage = Depends(get_storage),
+) -> Response:
+    job = await load_job(session, user, job_id)
+    if job.parent_job_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Only projects can be deleted",
+        )
+
+    children = (
+        await session.exec(select(Job).where(Job.parent_job_id == job.id))
+    ).all()
+    all_jobs = [job, *children]
+    if any(item.status in {"queued", "running"} for item in all_jobs):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot delete a project while processing is active",
+        )
+
+    artifacts = (
+        await session.exec(
+            select(JobArtifact).where(
+                JobArtifact.job_id.in_([item.id for item in all_jobs])
+            )
+        )
+    ).all()
+
+    storage_keys = {artifact.r2_key for artifact in artifacts}
+    if job.source_r2_key and not job.source_r2_key.startswith("demo/"):
+        storage_keys.add(job.source_r2_key)
+
+    for artifact in artifacts:
+        await session.delete(artifact)
+    for child in children:
+        await session.delete(child)
+    await session.delete(job)
+    await session.commit()
+
+    for key in storage_keys:
+        try:
+            await storage.delete(key)
+        except Exception:
+            pass
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/{job_id}/effects", response_model=list[JobRead])
@@ -485,18 +573,25 @@ async def job_events(
     settings: Settings = Depends(get_settings_dep),
     broker: EventBroker = Depends(get_broker),
 ):
-    # Open and close the DB session before returning EventSourceResponse so
-    # long-lived SSE streams do not hold connections from SQLAlchemy's pool.
-    async with request.app.state.sessionmaker() as session:
-        user = await get_current_user(request, session=session, settings=settings)
-        job = await load_job(session, user, job_id)
-        artifacts = (
-            await session.exec(select(JobArtifact).where(JobArtifact.job_id == job.id))
-        ).all()
-        job_status = job.status
-        snapshot = to_job_read(job, artifacts).model_dump(mode="json")
-
+    # Subscribe before reading the snapshot so terminal events published during
+    # the DB read cannot be missed. Open and close the DB session before
+    # returning EventSourceResponse so long-lived SSE streams do not hold
+    # connections from SQLAlchemy's pool.
     subscription = broker.subscribe(job_id)
+    try:
+        async with request.app.state.sessionmaker() as session:
+            user = await get_current_user(request, session=session, settings=settings)
+            job = await load_job(session, user, job_id)
+            artifacts = (
+                await session.exec(select(JobArtifact).where(JobArtifact.job_id == job.id))
+            ).all()
+            job_status = job.status
+            snapshot = to_job_read(job, artifacts).model_dump(mode="json")
+    except Exception:
+        close = getattr(subscription, "close", None)
+        if close is not None:
+            await close()
+        raise
 
     async def event_stream():
         try:
@@ -566,7 +661,7 @@ async def download_artifact(
     session: AsyncSession = Depends(get_session),
     storage: ObjectStorage = Depends(get_storage),
     settings: Settings = Depends(get_settings_dep),
-) -> RedirectResponse:
+) -> Response:
     job = await load_job(session, user, job_id)
     artifact = await session.get(JobArtifact, artifact_id)
     if artifact is None or artifact.job_id != job.id:
@@ -574,8 +669,14 @@ async def download_artifact(
             status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found"
         )
 
-    filename = Path(artifact.r2_key).name
+    filename = (
+        Path(artifact.r2_key).name.replace('"', "").replace("\r", "").replace("\n", "")
+    )
     if artifact.format in TEXT_MEDIA_TYPES:
+        if not await storage.exists(artifact.r2_key):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Artifact file not found"
+            )
         data = await storage.get(artifact.r2_key)
         return Response(
             content=data,

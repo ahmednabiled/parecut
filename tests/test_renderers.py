@@ -136,3 +136,36 @@ def test_demo_transcript_scales_to_duration():
     transcript = demo_transcript(12.0)
     assert transcript.segments[-1].end <= 12.0
     assert {segment.speaker for segment in transcript.segments} == {"SPEAKER_01", "SPEAKER_02"}
+
+
+def test_cut_plan_keeps_distinct_arabic_segments_and_catches_arabic_retake():
+    transcript = Transcript(
+        speakers=["SPEAKER_01"],
+        segments=[
+            TranscriptSegment(
+                speaker="SPEAKER_01",
+                start=0.0,
+                end=2.5,
+                text="أهلا بكم في هذا الفيديو الجديد",
+            ),
+            TranscriptSegment(
+                speaker="SPEAKER_01",
+                start=3.0,
+                end=6.0,
+                text="اليوم سنتحدث عن الإضاءة في التصوير.",
+            ),
+            TranscriptSegment(
+                speaker="SPEAKER_01",
+                start=7.0,
+                end=10.0,
+                text="اليوم سنتحدث عن الإضاءة في التصوير الاحترافي.",
+            ),
+        ],
+    )
+
+    plan = build_cut_plan(transcript, {"SPEAKER_01": "presenter"})
+    kept = [r for r in plan if r.action == "keep"]
+    retakes = [r for r in plan if r.reason == "RETAKE"]
+
+    assert [r.start for r in kept] == [0.0, 7.0]
+    assert [r.start for r in retakes] == [3.0]

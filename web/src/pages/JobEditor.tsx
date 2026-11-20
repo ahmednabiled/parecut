@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { ApiError, apiFetch } from "../api/client";
 import type {
   ArabicDialect,
@@ -17,7 +17,9 @@ import type { EditorTrack } from "../components/editor/types";
 import Viewer from "../components/editor/Viewer";
 import Icon from "../components/Icon";
 import StatusPill from "../components/StatusPill";
+import { useJobEvents } from "../hooks/useJobEvents";
 import { useTimelineAudio } from "../hooks/useTimelineAudio";
+import { applyJobEvent, type LiveJobEvent } from "../lib/jobEvents";
 import {
   captionCueKey,
   chunkCaptions,
@@ -157,17 +159,38 @@ function numberOr(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+function runProgress(run: Job): number | null {
+  const states = Object.values(run.stage_states ?? {}).filter(
+    (state) => state.status !== "skipped",
+  );
+  if (states.length === 0) return null;
+  const total = states.reduce((sum, state) => sum + (state.percent ?? 0), 0);
+  return Math.round(total / states.length);
+}
+
 export default function JobEditor() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const [chunkWords, setChunkWords] = useState(5);
   const [muted, setMuted] = useState<Record<string, boolean>>({});
+  const [autoSolo, setAutoSolo] = useState<boolean>(() => {
+    try {
+      const saved = window.localStorage.getItem("parecut-editor-auto-solo");
+      return saved === null ? true : saved === "true";
+    } catch {
+      return true;
+    }
+  });
   const [selectedTrackId, setSelectedTrackId] = useState("original");
   const [deletingTrackId, setDeletingTrackId] = useState<string | null>(null);
   const [captionEdits, setCaptionEdits] = useState<Record<string, string>>({});
   const [applyError, setApplyError] = useState<string | null>(null);
   const [shortfall, setShortfall] = useState<Shortfall | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [confirmDeleteProject, setConfirmDeleteProject] = useState(false);
 
   const projectQuery = useQuery<Job>({
     queryKey: ["job", id],
@@ -192,6 +215,40 @@ export default function JobEditor() {
   const project = projectQuery.data ?? null;
   const effects = effectsQuery.data ?? EMPTY_EFFECTS;
 
+  const activeEffectRun = useMemo(
+    () => effects.find((run) => RUNNING_STATUSES.has(run.status)) ?? null,
+    [effects],
+  );
+  const liveJobId =
+    project && RUNNING_STATUSES.has(project.status)
+      ? project.id
+      : activeEffectRun?.id;
+
+  const handleLiveEvent = useCallback(
+    (event: LiveJobEvent) => {
+      if (!liveJobId || !id) return;
+      if (liveJobId === id) {
+        queryClient.setQueryData<Job>(["job", id], (current) =>
+          current ? applyJobEvent(current, event) : current,
+        );
+      } else {
+        queryClient.setQueryData<Job[]>(["job-effects", id], (current) =>
+          current?.map((run) =>
+            run.id === liveJobId ? applyJobEvent(run, event) : run,
+          ),
+        );
+      }
+      if (event.type === "job.completed" || event.type === "job.failed") {
+        void queryClient.invalidateQueries({ queryKey: ["job", id] });
+        void queryClient.invalidateQueries({ queryKey: ["job-effects", id] });
+        void queryClient.invalidateQueries({ queryKey: ["profile"] });
+      }
+    },
+    [id, liveJobId, queryClient],
+  );
+
+  useJobEvents(liveJobId, Boolean(liveJobId), handleLiveEvent);
+
   const tracks = useMemo(() => buildTracks(project, effects), [project, effects]);
   const selectedTrack = useMemo(
     () =>
@@ -205,9 +262,13 @@ export default function JobEditor() {
     () => locateTranscript(project, effects, activeTrackId),
     [project, effects, activeTrackId],
   );
+  const sourceTranscript = useMemo(
+    () => locateTranscript(project, effects, "original"),
+    [project, effects],
+  );
   const speakerJob = useMemo(
-    () => locateSpeakerJob(project, effects, activeTrackId),
-    [project, effects, activeTrackId],
+    () => locateSpeakerJob(project, effects, "original"),
+    [project, effects],
   );
   const transcriptArtifact = transcriptSource?.artifact ?? null;
 
@@ -274,15 +335,8 @@ export default function JobEditor() {
       ) as Record<string, boolean>,
     [tracks, muted],
   );
-  const playbackTracks = useMemo(
-    () =>
-      tracks.filter(
-        (track) => track.kind === "original" || !mutedTracks[track.id],
-      ),
-    [tracks, mutedTracks],
-  );
   const audio = useTimelineAudio(
-    playbackTracks,
+    tracks,
     mutedTracks,
     duration > 0 ? duration : 3600,
   );
@@ -377,6 +431,42 @@ export default function JobEditor() {
     },
   });
 
+  const renameMutation = useMutation({
+    mutationFn: (sourceFilename: string) =>
+      apiFetch<Job>(`/api/jobs/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ source_filename: sourceFilename }),
+      }),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(["job", id], updated);
+      void queryClient.invalidateQueries({ queryKey: ["profile"] });
+      setRenaming(false);
+      setApplyError(null);
+    },
+    onError: (error) => {
+      setApplyError(
+        error instanceof Error ? error.message : "Could not rename project.",
+      );
+    },
+  });
+
+  const deleteProjectMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<void>(`/api/jobs/${id}`, {
+        method: "DELETE",
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["profile"] });
+      navigate("/", { replace: true });
+    },
+    onError: (error) => {
+      setConfirmDeleteProject(false);
+      setApplyError(
+        error instanceof Error ? error.message : "Could not delete project.",
+      );
+    },
+  });
+
   const handleDeleteTrack = useCallback(
     (trackId: string) => {
       deleteMutation.mutate(trackId);
@@ -424,6 +514,69 @@ export default function JobEditor() {
     [tracks],
   );
 
+  const soloTrack = useCallback(
+    (trackId: string) => {
+      setMuted(
+        Object.fromEntries(
+          tracks.map((track) => [track.id, track.id !== trackId]),
+        ) as Record<string, boolean>,
+      );
+    },
+    [tracks],
+  );
+
+  const handleSelectTrack = useCallback(
+    (trackId: string) => {
+      setSelectedTrackId(trackId);
+      if (autoSolo) {
+        soloTrack(trackId);
+      }
+    },
+    [autoSolo, soloTrack],
+  );
+
+  const handleToggleAutoSolo = useCallback(() => {
+    setAutoSolo((current) => {
+      const next = !current;
+      try {
+        window.localStorage.setItem("parecut-editor-auto-solo", String(next));
+      } catch {
+        // Persistence is best effort.
+      }
+      if (next) {
+        soloTrack(activeTrackId);
+      }
+      return next;
+    });
+  }, [activeTrackId, soloTrack]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.code !== "Space" ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey
+      ) {
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      event.preventDefault();
+      audio.toggle();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [audio.toggle]);
+
   const handleEditCue = useCallback(
     (cue: CaptionCue, text: string) => {
       setCaptionEdits((current) => {
@@ -458,8 +611,17 @@ export default function JobEditor() {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     const base = project.source_filename.replace(/\.[^.]+$/, "");
+    const trackSlug =
+      selectedTrack && selectedTrack.kind !== "original"
+        ? selectedTrack.label
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "_")
+            .replace(/^_|_$/g, "")
+        : "";
     anchor.href = url;
-    anchor.download = `${base || "captions"}.srt`;
+    anchor.download = trackSlug
+      ? `${base || "captions"}_${trackSlug}.srt`
+      : `${base || "captions"}.srt`;
     anchor.click();
     URL.revokeObjectURL(url);
   }
@@ -524,15 +686,82 @@ export default function JobEditor() {
       id: run.id,
       effect: run.effect ?? "transcribe",
       label: run.effect ? effectLabel(run.effect) : "effect",
+      percent: runProgress(run),
     }));
+
+  const hasActiveRun =
+    RUNNING_STATUSES.has(project.status) || processing.length > 0;
+
+  function commitRename() {
+    const trimmed = nameDraft.trim();
+    if (!trimmed || trimmed === project?.source_filename) {
+      setRenaming(false);
+      return;
+    }
+    renameMutation.mutate(trimmed);
+  }
 
   return (
     <div className="flex flex-col xl:h-full xl:min-h-0 xl:flex-1">
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-outline-variant pb-3">
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-          <h1 className="truncate text-[18px] font-semibold leading-6 tracking-[-0.01em]">
-            {project.source_filename}
-          </h1>
+          {renaming ? (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                commitRename();
+              }}
+              className="flex items-center gap-1.5"
+            >
+              <input
+                autoFocus
+                aria-label="Project name"
+                value={nameDraft}
+                disabled={renameMutation.isPending}
+                onChange={(event) => setNameDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    setRenaming(false);
+                  }
+                }}
+                className="h-7 rounded border border-on-surface bg-surface-container-low px-2 text-[15px] font-medium text-on-surface focus:outline-none"
+              />
+              <button
+                type="submit"
+                disabled={renameMutation.isPending}
+                aria-label="Save project name"
+                className="grid size-7 place-items-center rounded-full text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+              >
+                <Icon name="check" size={15} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setRenaming(false)}
+                aria-label="Cancel rename"
+                className="grid size-7 place-items-center rounded-full text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+              >
+                <Icon name="close" size={15} />
+              </button>
+            </form>
+          ) : (
+            <div className="flex min-w-0 items-center gap-1.5">
+              <h1 className="truncate text-[18px] font-semibold leading-6 tracking-[-0.01em]">
+                {project.source_filename}
+              </h1>
+              <button
+                type="button"
+                onClick={() => {
+                  setNameDraft(project.source_filename);
+                  setRenaming(true);
+                }}
+                aria-label="Rename project"
+                title="Rename project"
+                className="grid size-7 shrink-0 place-items-center rounded-full text-on-surface-variant transition-colors duration-150 ease-standard hover:bg-surface-container-high hover:text-on-surface"
+              >
+                <Icon name="edit" size={14} />
+              </button>
+            </div>
+          )}
           <StatusPill status={project.status} />
           <p className="font-mono text-[11px] text-on-surface-variant">
             {formatDuration(project.duration_seconds)} · {project.fps} fps
@@ -544,13 +773,55 @@ export default function JobEditor() {
           </p>
         </div>
 
-        <Link
-          to="/"
-          aria-label="Back to dashboard"
-          className="grid size-8 shrink-0 place-items-center rounded-full text-on-surface-variant transition-colors duration-150 ease-standard hover:bg-surface-container-high hover:text-on-surface"
-        >
-          <Icon name="arrow_back" size={16} />
-        </Link>
+        <div className="flex shrink-0 items-center gap-1">
+          {confirmDeleteProject ? (
+            <div className="flex items-center gap-1 rounded-full border border-error/30 bg-error-container px-2.5 py-1">
+              <span className="text-[11px] font-medium text-on-error-container">
+                Delete project?
+              </span>
+              <button
+                type="button"
+                disabled={deleteProjectMutation.isPending}
+                onClick={() => deleteProjectMutation.mutate()}
+                aria-label="Confirm deleting project"
+                className="grid size-6 place-items-center rounded-full text-on-error-container hover:bg-error/20"
+              >
+                <Icon name="check" size={14} />
+              </button>
+              <button
+                type="button"
+                disabled={deleteProjectMutation.isPending}
+                onClick={() => setConfirmDeleteProject(false)}
+                aria-label="Cancel deleting project"
+                className="grid size-6 place-items-center rounded-full text-on-error-container hover:bg-error/20"
+              >
+                <Icon name="close" size={14} />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={hasActiveRun || deleteProjectMutation.isPending}
+              onClick={() => setConfirmDeleteProject(true)}
+              aria-label="Delete project"
+              title={
+                hasActiveRun
+                  ? "Wait for processing to finish before deleting"
+                  : "Delete project"
+              }
+              className="grid size-8 shrink-0 place-items-center rounded-full text-on-surface-variant transition-colors duration-150 ease-standard hover:bg-error-container hover:text-error disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Icon name="delete" size={16} />
+            </button>
+          )}
+          <Link
+            to="/"
+            aria-label="Back to dashboard"
+            className="grid size-8 shrink-0 place-items-center rounded-full text-on-surface-variant transition-colors duration-150 ease-standard hover:bg-surface-container-high hover:text-on-surface"
+          >
+            <Icon name="arrow_back" size={16} />
+          </Link>
+        </div>
       </div>
 
       {project.status === "failed" ? (
@@ -586,8 +857,10 @@ export default function JobEditor() {
             tracks={tracks}
             muted={mutedTracks}
             onToggleMute={handleToggleMute}
+            autoSolo={autoSolo}
+            onToggleAutoSolo={handleToggleAutoSolo}
             selectedTrackId={activeTrackId}
-            onSelectTrack={setSelectedTrackId}
+            onSelectTrack={handleSelectTrack}
             onDeleteTrack={handleDeleteTrack}
             deletingTrackId={deletingTrackId}
             duration={duration}
@@ -612,7 +885,7 @@ export default function JobEditor() {
           inputLabel={selectedTrack?.label ?? "Original audio"}
           error={applyError}
           shortfall={shortfall}
-          transcriptJob={transcriptSource?.job ?? null}
+          transcriptJob={sourceTranscript?.job ?? null}
           speakerJob={speakerJob}
           onSpeakerUpdated={handleSpeakerUpdated}
           defaultMix={project.pipeline_config.enhance_mix}
@@ -633,7 +906,7 @@ export default function JobEditor() {
       </div>
 
       <div className="hidden">
-        {playbackTracks.map((track) => (
+        {tracks.map((track) => (
           <audio
             key={track.id}
             ref={audio.registerTrack(track.id)}

@@ -6,10 +6,15 @@ from typing import Literal
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+DEFAULT_DEV_SECRET = "dev-only-insecure-secret-change-me"
+
+
 class Settings(BaseSettings):
     app_env: Literal["dev", "test", "prod"] = "dev"
-    secret_key: str = "dev-only-insecure-secret-change-me"
+    secret_key: str = DEFAULT_DEV_SECRET
     database_url: str = "sqlite+aiosqlite:///./var/parecut.db"
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
     storage_dir: Path = Path("var/storage")
     storage_backend: Literal["local", "r2"] = "local"
     r2_account_id: str | None = None
@@ -36,6 +41,8 @@ class Settings(BaseSettings):
     download_url_ttl_seconds: int = 900
     mock_stage_delay_ms: int = 1500
     seed_demo: bool = True
+    orphan_upload_ttl_seconds: int = 86_400
+    orphan_upload_cleanup_interval_seconds: int = 3_600
     frontend_dist: Path = Path("web/dist")
 
     model_config = SettingsConfigDict(
@@ -43,6 +50,31 @@ class Settings(BaseSettings):
         env_prefix="PARECUT_",
         extra="ignore",
     )
+
+    def validate_runtime(self) -> None:
+        if self.app_env != "prod":
+            return
+        if self.secret_key == DEFAULT_DEV_SECRET or len(self.secret_key) < 32:
+            raise ValueError(
+                "PARECUT_SECRET_KEY must be a non-default secret of at least 32 characters in prod"
+            )
+        if self.storage_backend == "r2" and not all(
+            (
+                self.r2_bucket,
+                self.r2_endpoint_url,
+                self.r2_access_key_id,
+                self.r2_secret_access_key,
+            )
+        ):
+            raise ValueError(
+                "R2 storage backend requires bucket, endpoint, and credentials in prod"
+            )
+        if self.pipeline_runner == "runpod" and not all(
+            (self.runpod_api_key, self.runpod_audio_endpoint_id)
+        ):
+            raise ValueError(
+                "Runpod pipeline runner requires API key and audio endpoint ID in prod"
+            )
 
 
 @lru_cache

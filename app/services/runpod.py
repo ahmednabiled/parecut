@@ -194,6 +194,37 @@ class RunpodPipelineRunner:
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
 
+    async def spawn_resume(self, job_id: str) -> None:
+        task = asyncio.create_task(self.resume(job_id))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    async def resume(self, job_id: str) -> None:
+        async with self._sessionmaker() as session:
+            job = await session.get(Job, job_id)
+            if (
+                job is None
+                or job.status in {"completed", "failed"}
+                or not job.runpod_job_id
+            ):
+                return
+            endpoint_id = self._settings.runpod_audio_endpoint_id
+            if not endpoint_id:
+                await self._fail(session, job, "runpod_not_configured")
+                return
+            runpod_job_id = job.runpod_job_id
+            config = PipelineConfig.model_validate(job.pipeline_config)
+
+        logger.info("resuming runpod polling for job %s (%s)", job_id, runpod_job_id)
+        try:
+            await self._poll(job_id, endpoint_id, runpod_job_id, config)
+        except Exception:
+            logger.exception("resumed runpod job %s failed", job_id)
+            async with self._sessionmaker() as session:
+                job = await session.get(Job, job_id)
+                if job is not None:
+                    await self._fail(session, job, "runpod_failed")
+
     def _absolute(self, url: str) -> str:
         if url.startswith("http://") or url.startswith("https://"):
             return url
@@ -253,6 +284,7 @@ class RunpodPipelineRunner:
                 await session.commit()
             await self._poll(job_id, endpoint_id, str(runpod_job_id), config)
         except Exception:
+            logger.exception("runpod job %s failed", job_id)
             async with self._sessionmaker() as session:
                 job = await session.get(Job, job_id)
                 if job is not None:

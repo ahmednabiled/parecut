@@ -14,6 +14,8 @@ interface TimelineProps {
   tracks: EditorTrack[];
   muted: Record<string, boolean>;
   onToggleMute: (id: string) => void;
+  autoSolo: boolean;
+  onToggleAutoSolo: () => void;
   selectedTrackId: string;
   onSelectTrack: (id: string) => void;
   onDeleteTrack: (id: string) => void;
@@ -130,6 +132,8 @@ export default function Timeline({
   tracks,
   muted,
   onToggleMute,
+  autoSolo,
+  onToggleAutoSolo,
   selectedTrackId,
   onSelectTrack,
   onDeleteTrack,
@@ -205,27 +209,41 @@ export default function Timeline({
     return ratio * duration;
   }
 
-  function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+  function startScrub(
+    event: React.PointerEvent<HTMLElement>,
+    ignoreInteractive: boolean,
+  ) {
     if (event.button !== 0) return;
-    const target = event.target as HTMLElement;
-    if (target.closest("button,a,input,select")) return;
+    if (ignoreInteractive) {
+      const target = event.target as HTMLElement;
+      if (target.closest("button,a,input,select")) return;
+    }
     const time = timeAt(event.clientX);
     if (time === null) return;
 
     event.preventDefault();
+    event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
     scrubbingRef.current = true;
     setScrubbing(true);
     onSeek(time);
   }
 
-  function handlePointerMove(event: React.PointerEvent<HTMLDivElement>) {
+  function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    startScrub(event, true);
+  }
+
+  function handleHandlePointerDown(event: React.PointerEvent<HTMLElement>) {
+    startScrub(event, false);
+  }
+
+  function handlePointerMove(event: React.PointerEvent<HTMLElement>) {
     if (!scrubbingRef.current) return;
     const target = timeAt(event.clientX);
     if (target !== null) onSeek(target);
   }
 
-  function endScrub(event: React.PointerEvent<HTMLDivElement>) {
+  function endScrub(event: React.PointerEvent<HTMLElement>) {
     if (!scrubbingRef.current) return;
     scrubbingRef.current = false;
     setScrubbing(false);
@@ -244,6 +262,7 @@ export default function Timeline({
             type="button"
             onClick={onTogglePlay}
             aria-label={isPlaying ? "Pause" : "Play"}
+            title="Play / Pause (Space)"
             className="grid size-10 place-items-center rounded-full bg-primary text-on-primary transition-opacity duration-150 ease-standard hover:opacity-90"
           >
             <Icon name={isPlaying ? "pause" : "play_arrow"} size={20} />
@@ -252,16 +271,44 @@ export default function Timeline({
             {formatMediaTime(currentTime)} / {formatMediaTime(duration)}
           </span>
         </div>
-        <p className="text-[12px] text-on-surface-variant">
-          Drag the waves to scrub. Click a track name to choose the effect input
-          (outlined). Mute one layer to hear another.
-        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="text-[12px] text-on-surface-variant">
+            Space to play. Drag playhead or waves to scrub.
+          </p>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={autoSolo}
+            onClick={onToggleAutoSolo}
+            title="Automatically mute other tracks when selecting a track"
+            className={`inline-flex h-7 items-center gap-2 rounded-full border px-2.5 text-[11px] font-medium transition-colors duration-150 ease-standard ${
+              autoSolo
+                ? "border-primary bg-primary text-on-primary"
+                : "border-outline-variant bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+            }`}
+          >
+            <span
+              aria-hidden="true"
+              className={`size-1.5 rounded-full ${
+                autoSolo ? "bg-on-primary" : "bg-on-surface-variant/60"
+              }`}
+            />
+            Auto-solo
+          </button>
+        </div>
       </div>
 
       <div className="mt-4 flex min-h-0 gap-3 xl:flex-1">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div
-            className="flex shrink-0 justify-between border-b border-outline-variant pb-1 font-mono text-[10px] text-on-surface-variant"
+            onPointerDown={handleHandlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={endScrub}
+            onPointerCancel={endScrub}
+            onLostPointerCapture={endScrub}
+            className={`flex shrink-0 touch-none select-none justify-between border-b border-outline-variant pb-1 font-mono text-[10px] text-on-surface-variant ${
+              scrubbing ? "cursor-grabbing" : "cursor-pointer"
+            }`}
             style={{ paddingLeft: TRACK_OFFSET }}
           >
             {[0, 0.25, 0.5, 0.75, 1].map((position) => (
@@ -273,7 +320,7 @@ export default function Timeline({
             <div
               ref={laneRef}
               className={`absolute inset-0 touch-none select-none overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
-                scrubbing ? "cursor-grabbing" : "cursor-crosshair"
+                scrubbing ? "cursor-grabbing" : "cursor-default"
               }`}
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
@@ -394,7 +441,7 @@ export default function Timeline({
                             </span>
                           </button>
                           {track.artifact ? (
-                            <span className="pointer-events-auto flex shrink-0 items-center gap-0.5">
+                            <span className="pointer-events-auto flex shrink-0 items-center gap-0.5 rounded-md border border-outline-variant/80 bg-surface-container/95 px-1 py-0.5 shadow-sm backdrop-blur-[2px]">
                               {pendingDelete === track.id ? (
                                 <>
                                   <span className="px-1 text-[10px] font-medium text-error">
@@ -411,7 +458,7 @@ export default function Timeline({
                                       onDeleteTrack(track.id);
                                     }}
                                     aria-label={`Confirm deleting ${track.label}`}
-                                    className="rounded p-0.5 text-error transition-colors duration-150 ease-standard hover:bg-error-container"
+                                    className="grid size-5 place-items-center rounded text-error transition-colors duration-150 ease-standard hover:bg-error-container"
                                   >
                                     <Icon name="check" size={14} />
                                   </button>
@@ -425,7 +472,7 @@ export default function Timeline({
                                       setPendingDelete(null);
                                     }}
                                     aria-label="Cancel delete"
-                                    className="rounded p-0.5 text-on-surface-variant transition-colors duration-150 ease-standard hover:bg-surface-container-high hover:text-on-surface"
+                                    className="grid size-5 place-items-center rounded text-on-surface/80 transition-colors duration-150 ease-standard hover:bg-surface-container-high hover:text-on-surface"
                                   >
                                     <Icon name="close" size={14} />
                                   </button>
@@ -440,7 +487,8 @@ export default function Timeline({
                                     }
                                     onClick={(event) => event.stopPropagation()}
                                     aria-label={`Download ${track.label}`}
-                                    className="rounded p-0.5 text-on-surface-variant transition-colors duration-150 ease-standard hover:bg-surface-container-high hover:text-on-surface"
+                                    title="Download track"
+                                    className="grid size-5 place-items-center rounded text-on-surface/85 transition-colors duration-150 ease-standard hover:bg-surface-container-highest hover:text-on-surface"
                                   >
                                     <Icon name="download" size={14} />
                                   </a>
@@ -456,7 +504,7 @@ export default function Timeline({
                                     }}
                                     aria-label={`Delete ${track.label}`}
                                     title="Delete track"
-                                    className="rounded p-0.5 text-on-surface-variant transition-colors duration-150 ease-standard hover:bg-error-container hover:text-error disabled:opacity-60"
+                                    className="grid size-5 place-items-center rounded text-on-surface/85 transition-colors duration-150 ease-standard hover:bg-error-container hover:text-error disabled:opacity-60"
                                   >
                                     <span className="grid size-3.5 place-items-center">
                                       {deletingTrackId === track.id ? (
@@ -485,8 +533,22 @@ export default function Timeline({
                   <span className="grid size-7 shrink-0 place-items-center">
                     <span className="spinner" aria-hidden="true" />
                   </span>
-                  <div className="flex h-10 flex-1 items-center rounded border border-dashed border-outline-variant bg-surface-container-low px-2 text-[12px] text-on-surface-variant">
-                    Processing {run.label}
+                  <div className="relative flex h-10 flex-1 items-center justify-between overflow-hidden rounded border border-dashed border-outline-variant bg-surface-container-low px-2 text-[12px] text-on-surface-variant">
+                    {typeof run.percent === "number" && run.percent > 0 ? (
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-y-0 left-0 bg-primary/10 transition-[width] duration-300"
+                        style={{
+                          width: `${Math.max(0, Math.min(100, run.percent))}%`,
+                        }}
+                      />
+                    ) : null}
+                    <span className="relative">Processing {run.label}</span>
+                    {typeof run.percent === "number" ? (
+                      <span className="relative font-mono text-[11px] text-on-surface-variant">
+                        {run.percent}%
+                      </span>
+                    ) : null}
                   </div>
                 </div>
               ))}
@@ -494,9 +556,34 @@ export default function Timeline({
 
             <div
               ref={playheadRef}
-              className="pointer-events-none absolute bottom-0 top-0 w-px will-change-[left] bg-primary"
+              className="pointer-events-none absolute -top-2 bottom-0 -ml-[5px] w-[11px] will-change-[left]"
             >
-              <span className="absolute -left-1.5 -top-1.5 size-3 rotate-45 border border-primary bg-surface" />
+              <div
+                role="slider"
+                aria-label="Playhead"
+                aria-valuemin={0}
+                aria-valuemax={Math.round(duration)}
+                aria-valuenow={Math.round(currentTime)}
+                onPointerDown={handleHandlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={endScrub}
+                onPointerCancel={endScrub}
+                onLostPointerCapture={endScrub}
+                className={`pointer-events-auto -mx-1 -mt-1 flex touch-none justify-center px-1 pb-1 pt-1 ${
+                  scrubbing ? "cursor-grabbing" : "cursor-grab"
+                }`}
+              >
+                <svg
+                  width="11"
+                  height="8"
+                  viewBox="0 0 11 8"
+                  aria-hidden="true"
+                  className="block shrink-0 text-primary"
+                >
+                  <polygon points="0,0 11,0 5.5,8" fill="currentColor" />
+                </svg>
+              </div>
+              <span className="absolute bottom-0 left-[5px] top-[7px] w-px bg-primary" />
             </div>
           </div>
         </div>

@@ -71,7 +71,11 @@ async def login(
 ) -> SessionUser:
     email = payload.email.strip().lower()
     user = (await session.exec(select(User).where(User.email == email))).first()
-    if user is None or not verify_password(payload.password, user.hashed_password):
+    if (
+        user is None
+        or not user.is_active
+        or not verify_password(payload.password, user.hashed_password)
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",

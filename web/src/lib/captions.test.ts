@@ -63,13 +63,14 @@ describe("caption helpers", () => {
     );
   });
 
-  it("keeps corrected cue text in the SRT output", () => {
+  it("keeps corrected cue text without speaker prefixes in the SRT output", () => {
     const cues = chunkCaptions(parseTranscript(before), 3);
     const edited = cues.map((cue, index) =>
       index === 0 ? { ...cue, text: "corrected line" } : cue,
     );
     const srt = cuesToSrt(edited);
-    expect(srt).toContain("[SPEAKER_00] corrected line");
+    expect(srt).toContain("00:00:01,000 --> 00:00:02,000\ncorrected line");
+    expect(srt).not.toContain("[SPEAKER_00]");
     expect(srt).not.toContain("one two three");
   });
 });

@@ -116,7 +116,7 @@ export function cuesToSrt(cues: CaptionCue[]): string {
   return cues
     .map(
       (cue, index) =>
-        `${index + 1}\n${formatSrtTime(cue.start)} --> ${formatSrtTime(cue.end)}\n[${cue.speaker}] ${cue.text}`,
+        `${index + 1}\n${formatSrtTime(cue.start)} --> ${formatSrtTime(cue.end)}\n${cue.text}`,
     )
     .join("\n\n");
 }
@@ -127,7 +127,7 @@ export function cuesToVtt(cues: CaptionCue[]): string {
     cues
       .map(
         (cue) =>
-          `${formatSrtTime(cue.start).replace(",", ".")} --> ${formatSrtTime(cue.end).replace(",", ".")}\n[${cue.speaker}] ${cue.text}`,
+          `${formatSrtTime(cue.start).replace(",", ".")} --> ${formatSrtTime(cue.end).replace(",", ".")}\n${cue.text}`,
       )
       .join("\n\n")
   );

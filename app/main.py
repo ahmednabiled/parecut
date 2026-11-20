@@ -1,8 +1,10 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -11,6 +13,7 @@ from app.db import create_engine
 from app.events import InMemoryEventBroker
 from app.routers import auth, jobs, profile, uploads
 from app.seed import reconcile_orphan_jobs, seed_demo
+from app.services.cleanup import periodic_cleanup
 from app.services.pipeline import MockPipelineRunner
 from app.services.runpod import HttpRunpodClient, RunpodPipelineRunner
 from app.storage import LocalObjectStorage, R2ObjectStorage
@@ -18,15 +21,37 @@ from app.storage import LocalObjectStorage, R2ObjectStorage
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
+    settings.validate_runtime()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         if settings.seed_demo:
             await seed_demo(app.state.sessionmaker, app.state.storage, settings)
-        await reconcile_orphan_jobs(app.state.sessionmaker, settings)
+        await reconcile_orphan_jobs(
+            app.state.sessionmaker, settings, runner=app.state.runner
+        )
+        cleanup_task: asyncio.Task | None = None
+        if (
+            settings.app_env != "test"
+            and settings.orphan_upload_cleanup_interval_seconds > 0
+        ):
+            cleanup_task = asyncio.create_task(
+                periodic_cleanup(
+                    app.state.sessionmaker,
+                    app.state.storage,
+                    ttl_seconds=settings.orphan_upload_ttl_seconds,
+                    interval_seconds=settings.orphan_upload_cleanup_interval_seconds,
+                )
+            )
         try:
             yield
         finally:
+            if cleanup_task is not None:
+                cleanup_task.cancel()
+                try:
+                    await cleanup_task
+                except asyncio.CancelledError:
+                    pass
             runpod_client = getattr(app.state, "runpod_client", None)
             if runpod_client is not None:
                 await runpod_client.aclose()
@@ -77,6 +102,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/api/ready")
+    async def ready() -> dict[str, str]:
+        async with app.state.sessionmaker() as session:
+            await session.exec(text("SELECT 1"))
+        return {"status": "ready"}
 
     app.include_router(auth.router)
     app.include_router(profile.router)

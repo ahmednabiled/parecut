@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from app.config import Settings
 from app.deps import get_current_user, get_settings_dep
 from app.models import User
-from app.storage import InvalidToken, ObjectStorage, get_storage
+from app.storage import InvalidToken, ObjectStorage, UploadTooLarge, get_storage
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 
@@ -64,7 +64,7 @@ async def presign_upload(
             detail="File exceeds the maximum upload size",
         )
 
-    upload_key = f"uploads/{uuid4().hex}/{_safe_name(payload.filename)}"
+    upload_key = f"uploads/{user.id}/{uuid4().hex}/{_safe_name(payload.filename)}"
     upload_url = storage.signed_upload_url(upload_key, settings.upload_url_ttl_seconds)
     expires_at = datetime.now(timezone.utc) + timedelta(
         seconds=settings.upload_url_ttl_seconds
@@ -88,13 +88,27 @@ async def receive_upload(
             status_code=status.HTTP_403_FORBIDDEN, detail="Invalid upload token"
         ) from exc
 
-    body = await request.body()
-    if len(body) > settings.max_upload_bytes:
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            if int(content_length) > settings.max_upload_bytes:
+                raise HTTPException(
+                    status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                    detail="File exceeds the maximum upload size",
+                )
+        except ValueError:
+            pass
+
+    content_type = request.headers.get("content-type", "application/octet-stream")
+    try:
+        await storage.put_stream(
+            key, request.stream(), content_type, settings.max_upload_bytes
+        )
+    except UploadTooLarge as exc:
         raise HTTPException(
             status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail="File exceeds the maximum upload size",
-        )
-    await storage.put(key, body, request.headers.get("content-type", "application/octet-stream"))
+        ) from exc
 
 
 @router.get("/download/{token}")

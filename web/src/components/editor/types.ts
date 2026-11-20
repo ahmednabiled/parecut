@@ -14,4 +14,5 @@ export interface ProcessingRun {
   id: string;
   effect: EffectName;
   label: string;
+  percent?: number | null;
 }

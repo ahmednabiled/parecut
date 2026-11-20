@@ -8,7 +8,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.config import Settings
 from app.models import Job, JobArtifact, User, UserProfile, utcnow
 from app.schemas import EffectCreate, EffectName, JobCreate
-from app.services.credits import add_ledger_entry, reserve_minutes
+from app.services.credits import add_ledger_entry, reserve_credits, reserve_minutes
 from app.services.pipeline import AUDIO_ARTIFACT_KINDS
 from app.services.stages import initial_stage_states
 from app.storage import ObjectStorage
@@ -92,7 +92,14 @@ async def create_job(
     settings: Settings,
     data: JobCreate,
 ) -> Job:
-    if not await storage.exists(data.upload_key):
+    expected_prefix = f"uploads/{user.id}/"
+    key_path = Path(data.upload_key)
+    if (
+        not data.upload_key.startswith(expected_prefix)
+        or key_path.is_absolute()
+        or ".." in key_path.parts
+        or not await storage.exists(data.upload_key)
+    ):
         raise UploadNotFound(data.upload_key)
 
     metadata = await storage.metadata(data.upload_key)
@@ -123,14 +130,6 @@ async def create_job(
 
     minutes = reserve_minutes(duration)
 
-    profile = await session.get(UserProfile, user.id)
-    if profile is None:
-        raise ProfileNotFound(user.id)
-
-    available = Decimal(profile.credit_balance_minutes or 0)
-    if available < minutes:
-        raise InsufficientCredits(minutes, available)
-
     job = Job(
         user_id=user.id,
         status="queued",
@@ -149,13 +148,15 @@ async def create_job(
     session.add(job)
     await session.flush()
 
-    await add_ledger_entry(
-        session,
-        profile,
-        delta=-minutes,
-        reason="job_reserve",
-        job_id=job.id,
+    reserved, available = await reserve_credits(
+        session, user.id, minutes=minutes, job_id=job.id
     )
+    if not reserved:
+        await session.rollback()
+        if available is None:
+            raise ProfileNotFound(user.id)
+        raise InsufficientCredits(minutes, available)
+
     await session.commit()
 
     try:
@@ -163,14 +164,17 @@ async def create_job(
     except Exception:
         job.status = "failed"
         job.error_code = "spawn_failed"
+        job.completed_at = utcnow()
         session.add(job)
-        await add_ledger_entry(
-            session,
-            profile,
-            delta=minutes,
-            reason="job_refund",
-            job_id=job.id,
-        )
+        profile = await session.get(UserProfile, user.id)
+        if profile is not None:
+            await add_ledger_entry(
+                session,
+                profile,
+                delta=minutes,
+                reason="job_refund",
+                job_id=job.id,
+            )
         await session.commit()
 
     return job
@@ -184,13 +188,6 @@ async def create_effect_run(
     data: EffectCreate,
 ) -> Job:
     minutes = reserve_minutes(parent.duration_seconds)
-    profile = await session.get(UserProfile, user.id)
-    if profile is None:
-        raise ProfileNotFound(user.id)
-
-    available = Decimal(profile.credit_balance_minutes or 0)
-    if available < minutes:
-        raise InsufficientCredits(minutes, available)
 
     config = effect_config(
         data.effect,
@@ -259,13 +256,15 @@ async def create_effect_run(
     session.add(job)
     await session.flush()
 
-    await add_ledger_entry(
-        session,
-        profile,
-        delta=-minutes,
-        reason="job_reserve",
-        job_id=job.id,
+    reserved, available = await reserve_credits(
+        session, user.id, minutes=minutes, job_id=job.id
     )
+    if not reserved:
+        await session.rollback()
+        if available is None:
+            raise ProfileNotFound(user.id)
+        raise InsufficientCredits(minutes, available)
+
     await session.commit()
 
     try:
@@ -273,14 +272,17 @@ async def create_effect_run(
     except Exception:
         job.status = "failed"
         job.error_code = "spawn_failed"
+        job.completed_at = utcnow()
         session.add(job)
-        await add_ledger_entry(
-            session,
-            profile,
-            delta=minutes,
-            reason="job_refund",
-            job_id=job.id,
-        )
+        profile = await session.get(UserProfile, user.id)
+        if profile is not None:
+            await add_ledger_entry(
+                session,
+                profile,
+                delta=minutes,
+                reason="job_refund",
+                job_id=job.id,
+            )
         await session.commit()
 
     return job
