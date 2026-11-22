@@ -1,8 +1,15 @@
+export interface CaptionWord {
+  start: number;
+  end: number;
+  text: string;
+}
+
 export interface CaptionSegment {
   speaker: string;
   start: number;
   end: number;
   text: string;
+  words?: CaptionWord[];
 }
 
 export interface CaptionCue {
@@ -12,6 +19,13 @@ export interface CaptionCue {
   text: string;
 }
 
+interface RawWord {
+  start?: unknown;
+  end?: unknown;
+  text?: unknown;
+  word?: unknown;
+}
+
 interface RawSegment {
   speaker?: unknown;
   text?: unknown;
@@ -19,6 +33,7 @@ interface RawSegment {
   end?: unknown;
   source_start?: unknown;
   source_end?: unknown;
+  words?: unknown;
 }
 
 interface RawTranscript {
@@ -55,11 +70,41 @@ export function parseTranscript(raw: string): CaptionSegment[] {
       typeof rawSegment.speaker === "string" && rawSegment.speaker
         ? rawSegment.speaker
         : "SPEAKER_01";
-    segments.push({ speaker, start, end, text });
+    const words: CaptionWord[] = [];
+    if (Array.isArray(rawSegment.words)) {
+      for (const item of rawSegment.words) {
+        if (item === null || typeof item !== "object") continue;
+        const rawWord = item as RawWord;
+        const wStart = numberOrNull(rawWord.start);
+        const wEnd = numberOrNull(rawWord.end);
+        const rawText =
+          typeof rawWord.text === "string"
+            ? rawWord.text
+            : typeof rawWord.word === "string"
+              ? rawWord.word
+              : "";
+        const wText = rawText.trim();
+        if (wStart === null || wEnd === null || wEnd < wStart || !wText) {
+          continue;
+        }
+        words.push({
+          start: wStart,
+          end: Math.max(wEnd, wStart + 0.001),
+          text: wText,
+        });
+      }
+    }
+    segments.push(
+      words.length > 0
+        ? { speaker, start, end, text, words }
+        : { speaker, start, end, text },
+    );
   }
 
   return segments.sort((a, b) => a.start - b.start);
 }
+
+const CHUNK_PAUSE_SECONDS = 0.6;
 
 export function chunkCaptions(
   segments: CaptionSegment[],
@@ -69,6 +114,52 @@ export function chunkCaptions(
   const cues: CaptionCue[] = [];
 
   for (const segment of segments) {
+    if (segment.words && segment.words.length > 0) {
+      // Expand any multi-word entries (e.g. from unaligned fallback segments)
+      // while preserving exact per-word start/end timestamps for single words.
+      const timedWords: CaptionWord[] = [];
+      for (const entry of segment.words) {
+        const parts = entry.text.split(/\s+/).filter(Boolean);
+        if (parts.length <= 1) {
+          if (parts.length === 1) timedWords.push(entry);
+          continue;
+        }
+        const entryDuration = Math.max(0.001, entry.end - entry.start);
+        parts.forEach((part, idx) => {
+          timedWords.push({
+            start: entry.start + (entryDuration * idx) / parts.length,
+            end: entry.start + (entryDuration * (idx + 1)) / parts.length,
+            text: part,
+          });
+        });
+      }
+
+      let bucket: CaptionWord[] = [];
+      const flush = () => {
+        if (bucket.length === 0) return;
+        cues.push({
+          speaker: segment.speaker,
+          start: bucket[0].start,
+          end: Math.max(bucket[bucket.length - 1].end, bucket[0].start + 0.001),
+          text: bucket.map((w) => w.text).join(" "),
+        });
+        bucket = [];
+      };
+
+      for (const word of timedWords) {
+        if (
+          bucket.length > 0 &&
+          (bucket.length >= size ||
+            word.start - bucket[bucket.length - 1].end >= CHUNK_PAUSE_SECONDS)
+        ) {
+          flush();
+        }
+        bucket.push(word);
+      }
+      flush();
+      continue;
+    }
+
     const words = segment.text.split(/\s+/).filter(Boolean);
     if (words.length === 0) continue;
     const duration = Math.max(0.001, segment.end - segment.start);

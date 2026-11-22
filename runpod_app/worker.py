@@ -20,6 +20,7 @@ from parecut_engine.schemas import (
     StudioChain,
     Transcript,
     TranscriptSegment,
+    TranscriptWord,
 )
 
 logger = logging.getLogger("parecut.worker")
@@ -833,6 +834,7 @@ def transcribe_languages(
             start=start,
             end=end,
             text=text,
+            words=[TranscriptWord(start=start, end=end, text=text)],
         )
         for candidate in kept
         for start, end, text in candidate.words
@@ -845,23 +847,41 @@ def transcribe_languages(
     )
 
 
+MERGE_PAUSE_SECONDS = 0.6
+
+
 def merge_words(transcript: Transcript) -> Transcript:
     if not transcript.segments:
         return transcript
 
     merged: list[TranscriptSegment] = []
-    current = transcript.segments[0].model_copy()
+    current = transcript.segments[0].model_copy(deep=True)
     for segment in transcript.segments[1:]:
         text = current.text.rstrip()
         same_speaker = segment.speaker == current.speaker
-        sentence_end = text.endswith((".", "!", "?"))
-        too_long = current.end - current.start >= 8.0
-        if same_speaker and not sentence_end and not too_long:
+        sentence_end = text.endswith((".", "!", "?", "؟"))
+        pause_gap = (segment.start - current.end) >= MERGE_PAUSE_SECONDS
+        too_long = (segment.end - current.start) >= 8.0
+        if same_speaker and not sentence_end and not pause_gap and not too_long:
             current.text = f"{text} {segment.text.lstrip()}".strip()
-            current.end = segment.end
+            current.end = max(current.end, segment.end)
+            if current.words or segment.words:
+                left_words = current.words or [
+                    TranscriptWord(
+                        start=current.start, end=current.end, text=text
+                    )
+                ]
+                right_words = segment.words or [
+                    TranscriptWord(
+                        start=segment.start,
+                        end=segment.end,
+                        text=segment.text.strip(),
+                    )
+                ]
+                current.words = [*left_words, *right_words]
         else:
             merged.append(current)
-            current = segment.model_copy()
+            current = segment.model_copy(deep=True)
     merged.append(current)
     return Transcript(speakers=transcript.speakers, segments=merged)
 

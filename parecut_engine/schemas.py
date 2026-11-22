@@ -95,11 +95,18 @@ class JobEvent(BaseModel):
     at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class TranscriptWord(BaseModel):
+    start: float
+    end: float
+    text: str
+
+
 class TranscriptSegment(BaseModel):
     speaker: str
     start: float
     end: float
     text: str
+    words: list[TranscriptWord] = Field(default_factory=list)
 
 
 class Transcript(BaseModel):

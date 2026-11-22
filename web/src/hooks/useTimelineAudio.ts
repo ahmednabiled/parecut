@@ -167,7 +167,7 @@ export function useTimelineAudio(
     }
 
     const now = performance.now();
-    if (now - lastUiRef.current >= 60) {
+    if (now - lastUiRef.current >= 30) {
       lastUiRef.current = now;
       setCurrentTime(timeRef.current);
 

@@ -73,4 +73,40 @@ describe("caption helpers", () => {
     expect(srt).not.toContain("[SPEAKER_00]");
     expect(srt).not.toContain("one two three");
   });
+
+  it("uses exact per-word timestamps and splits on pauses when words are present", () => {
+    const timed = JSON.stringify({
+      speakers: ["SPEAKER_01"],
+      segments: [
+        {
+          speaker: "SPEAKER_01",
+          start: 1.0,
+          end: 6.0,
+          text: "fast words then after pause",
+          words: [
+            { start: 1.0, end: 1.2, text: "fast" },
+            { start: 1.2, end: 1.5, text: "words" },
+            { start: 1.5, end: 1.8, text: "then" },
+            { start: 5.0, end: 5.4, text: "after" },
+            { start: 5.4, end: 6.0, text: "pause" },
+          ],
+        },
+      ],
+    });
+
+    const cues = chunkCaptions(parseTranscript(timed), 5);
+    expect(cues).toHaveLength(2);
+    expect(cues[0]).toEqual({
+      speaker: "SPEAKER_01",
+      start: 1.0,
+      end: 1.8,
+      text: "fast words then",
+    });
+    expect(cues[1]).toEqual({
+      speaker: "SPEAKER_01",
+      start: 5.0,
+      end: 6.0,
+      text: "after pause",
+    });
+  });
 });

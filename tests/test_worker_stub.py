@@ -714,3 +714,56 @@ def test_deepfilternet_chunks_long_audio(monkeypatch, tmp_path):
 
     assert calls == [2000, 2000, 1400]
     assert saved["audio"].shape[-1] == 5000
+
+
+def test_merge_words_splits_on_pause_gaps_and_preserves_word_timestamps():
+    from parecut_engine.schemas import TranscriptWord
+    from runpod_app.worker import merge_words
+
+    raw = Transcript(
+        speakers=["SPEAKER_01"],
+        segments=[
+            TranscriptSegment(
+                speaker="SPEAKER_01",
+                start=0.5,
+                end=0.8,
+                text="Hello",
+                words=[TranscriptWord(start=0.5, end=0.8, text="Hello")],
+            ),
+            TranscriptSegment(
+                speaker="SPEAKER_01",
+                start=0.85,
+                end=1.1,
+                text="world",
+                words=[TranscriptWord(start=0.85, end=1.1, text="world")],
+            ),
+            # 1.9s pause — must not merge across silence
+            TranscriptSegment(
+                speaker="SPEAKER_01",
+                start=3.0,
+                end=3.4,
+                text="after",
+                words=[TranscriptWord(start=3.0, end=3.4, text="after")],
+            ),
+            TranscriptSegment(
+                speaker="SPEAKER_01",
+                start=3.45,
+                end=3.9,
+                text="pause",
+                words=[TranscriptWord(start=3.45, end=3.9, text="pause")],
+            ),
+        ],
+    )
+
+    merged = merge_words(raw)
+    assert len(merged.segments) == 2
+    assert merged.segments[0].text == "Hello world"
+    assert merged.segments[0].start == 0.5
+    assert merged.segments[0].end == 1.1
+    assert [(w.start, w.end, w.text) for w in merged.segments[0].words] == [
+        (0.5, 0.8, "Hello"),
+        (0.85, 1.1, "world"),
+    ]
+    assert merged.segments[1].text == "after pause"
+    assert merged.segments[1].start == 3.0
+    assert merged.segments[1].end == 3.9
