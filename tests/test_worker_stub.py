@@ -767,3 +767,20 @@ def test_merge_words_splits_on_pause_gaps_and_preserves_word_timestamps():
     assert merged.segments[1].text == "after pause"
     assert merged.segments[1].start == 3.0
     assert merged.segments[1].end == 3.9
+
+
+def test_assign_speakers_uses_nearest_turn_when_word_falls_in_gap():
+    from runpod_app.worker import assign_speakers
+
+    turns = [
+        SpeakerTurn("SPEAKER_00", 0.0, 2.0),
+        SpeakerTurn("SPEAKER_01", 5.0, 8.0),
+    ]
+    transcript = Transcript(
+        speakers=["SPEAKER_01"],
+        segments=[
+            TranscriptSegment(speaker="SPEAKER_01", start=8.05, end=8.3, text="trailing"),
+        ],
+    )
+    assigned = assign_speakers(transcript, turns)
+    assert assigned.segments[0].speaker == "SPEAKER_01"

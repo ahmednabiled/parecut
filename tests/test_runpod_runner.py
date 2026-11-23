@@ -285,3 +285,37 @@ async def test_runpod_runner_is_selected_by_settings(tmp_path):
     assert isinstance(app.state.runner, RunpodPipelineRunner)
     assert isinstance(app.state.runpod_client, HttpRunpodClient)
     await app.state.runpod_client.aclose()
+
+
+async def test_runner_retries_transient_poll_errors_before_completing(app, client):
+    job = await _create_job(app, client)
+
+    class FlakyRunpodClient(FakeRunpodClient):
+        def __init__(self) -> None:
+            super().__init__(
+                [
+                    {
+                        "id": "rp-1",
+                        "status": "COMPLETED",
+                        "output": {"artifacts": [], "speaker_roles": {}},
+                    }
+                ]
+            )
+            self.attempts = 0
+
+        async def status(self, endpoint_id: str, runpod_job_id: str) -> dict:
+            self.attempts += 1
+            if self.attempts <= 2:
+                req = httpx.Request("GET", "https://api.runpod.ai/v2/ep-audio/status/rp-1")
+                res = httpx.Response(502, request=req)
+                raise httpx.HTTPStatusError("Bad Gateway", request=req, response=res)
+            return await super().status(endpoint_id, runpod_job_id)
+
+    app.state.settings.runpod_poll_interval_seconds = 0.0
+    flaky = FlakyRunpodClient()
+    await _runner(app, runpod=flaky).run(job["id"])
+
+    assert flaky.attempts == 3
+    async with app.state.sessionmaker() as session:
+        stored = await session.get(Job, job["id"])
+        assert stored.status == "completed"

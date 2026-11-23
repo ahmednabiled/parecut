@@ -239,8 +239,8 @@ export function useTimelineAudio(
     const target = master
       ? master.ended
         ? 0
-        : master.currentTime
-      : currentTime;
+        : (seekTargetRef.current ?? master.currentTime)
+      : timeRef.current;
     for (const [id, element] of entries) {
       if (Math.abs(element.currentTime - target) > 0.15) {
         try {

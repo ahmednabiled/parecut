@@ -298,8 +298,30 @@ class RunpodPipelineRunner:
         config: PipelineConfig,
     ) -> None:
         deadline = time.monotonic() + self._settings.runpod_job_timeout_seconds
+        consecutive_errors = 0
+        max_transient_errors = 5
         while True:
-            status = await self._client.status(endpoint_id, runpod_job_id)
+            try:
+                status = await self._client.status(endpoint_id, runpod_job_id)
+                consecutive_errors = 0
+            except httpx.HTTPError as exc:
+                is_transient = not isinstance(exc, httpx.HTTPStatusError) or (
+                    exc.response.status_code >= 500
+                    or exc.response.status_code == 429
+                )
+                consecutive_errors += 1
+                if not is_transient or consecutive_errors > max_transient_errors:
+                    raise
+                logger.warning(
+                    "transient runpod poll error (%d/%d) for job %s: %s",
+                    consecutive_errors,
+                    max_transient_errors,
+                    job_id,
+                    exc,
+                )
+                await asyncio.sleep(self._settings.runpod_poll_interval_seconds)
+                continue
+
             state = str(status.get("status") or "")
             output = status.get("output")
 

@@ -863,12 +863,13 @@ def merge_words(transcript: Transcript) -> Transcript:
         pause_gap = (segment.start - current.end) >= MERGE_PAUSE_SECONDS
         too_long = (segment.end - current.start) >= 8.0
         if same_speaker and not sentence_end and not pause_gap and not too_long:
+            prev_end = current.end
             current.text = f"{text} {segment.text.lstrip()}".strip()
             current.end = max(current.end, segment.end)
             if current.words or segment.words:
                 left_words = current.words or [
                     TranscriptWord(
-                        start=current.start, end=current.end, text=text
+                        start=current.start, end=prev_end, text=text
                     )
                 ]
                 right_words = segment.words or [
@@ -937,6 +938,13 @@ def _overlap(segment: TranscriptSegment, turn: SpeakerTurn) -> float:
     return max(0.0, min(segment.end, turn.end) - max(segment.start, turn.start))
 
 
+def _turn_distance(segment: TranscriptSegment, turn: SpeakerTurn) -> float:
+    mid = (segment.start + segment.end) / 2.0
+    if turn.start <= mid <= turn.end:
+        return 0.0
+    return min(abs(mid - turn.start), abs(mid - turn.end))
+
+
 def assign_speakers(
     transcript: Transcript, turns: list[SpeakerTurn]
 ) -> Transcript:
@@ -947,7 +955,11 @@ def assign_speakers(
     segments = []
     for segment in transcript.segments:
         best = max(turns, key=lambda turn: _overlap(segment, turn))
-        speaker = best.speaker if _overlap(segment, best) > 0 else speakers[0]
+        if _overlap(segment, best) > 0:
+            speaker = best.speaker
+        else:
+            nearest = min(turns, key=lambda turn: _turn_distance(segment, turn))
+            speaker = nearest.speaker
         segments.append(segment.model_copy(update={"speaker": speaker}))
 
     return Transcript(speakers=speakers, segments=segments)
@@ -1119,9 +1131,43 @@ def handler(
 ) -> dict[str, Any]:
     data = job["input"]
     config = PipelineConfig.model_validate(data["pipeline"])
+    owns_client = client is None
     client = client or httpx.Client(timeout=600)
     source_filename = data.get("source_filename", "source")
 
+    try:
+        return _run_handler(
+            job,
+            data,
+            config,
+            client,
+            source_filename,
+            denoiser=denoiser,
+            enhancer=enhancer,
+            polisher=polisher,
+            transcriber=transcriber,
+            diarizer=diarizer,
+            separator=separator,
+        )
+    finally:
+        if owns_client:
+            client.close()
+
+
+def _run_handler(
+    job: dict,
+    data: dict,
+    config: PipelineConfig,
+    client: httpx.Client,
+    source_filename: str,
+    *,
+    denoiser: Denoiser | None = None,
+    enhancer: Enhancer | None = None,
+    polisher: StudioPolisher | None = None,
+    transcriber: Transcriber | None = None,
+    diarizer: Diarizer | None = None,
+    separator: Separator | None = None,
+) -> dict[str, Any]:
     logger.info("downloading source %s", data["source_url"])
     source = _download(client, data["source_url"])
     logger.info("downloaded %d bytes", len(source))
@@ -1129,6 +1175,8 @@ def handler(
     with tempfile.TemporaryDirectory() as tmp:
         workdir = Path(tmp)
         denoise = config.noise_reduction or config.enhance
+        if config.noise_reduction:
+            _progress(job, "noise_reduction", 10)
         denoised, working_wav = prepare_audio(
             source,
             source_filename,
@@ -1136,10 +1184,13 @@ def handler(
             denoiser=denoiser,
             denoise=denoise,
         )
+        if config.noise_reduction:
+            _progress(job, "noise_reduction", 100)
         duration = float(data.get("duration_seconds") or _wav_duration(working_wav))
 
         enhanced: bytes | None = None
         if config.enhance:
+            _progress(job, "enhance", 15)
             enhanced_path = workdir / "enhanced.wav"
             if enhancer is None:
                 _resemble_enhance(
@@ -1152,6 +1203,7 @@ def handler(
             enhanced = enhanced_path.read_bytes()
 
             if config.studio_chain.enabled:
+                _progress(job, "enhance", 75)
                 polished_path = workdir / "enhanced_polished.wav"
                 if polisher is None:
                     _studio_polish(
@@ -1162,12 +1214,17 @@ def handler(
                 else:
                     polisher(enhanced_path, polished_path, config.studio_chain)
                 enhanced = polished_path.read_bytes()
+            _progress(job, "enhance", 100)
 
         turns: list[SpeakerTurn] = []
         diarization_fallback = False
         diarization_error: str | None = None
         source_speaker = data.get("source_speaker")
         if config.transcribe or config.separate_speakers:
+            if config.separate_speakers:
+                _progress(job, "separate_speakers", 15)
+            if config.transcribe:
+                _progress(job, "transcribe", 10)
             if source_speaker:
                 turns = [SpeakerTurn(str(source_speaker), 0.0, duration)]
             else:
@@ -1183,6 +1240,7 @@ def handler(
 
         transcript = Transcript(speakers=[], segments=[])
         if config.transcribe:
+            _progress(job, "transcribe", 40)
             transcript = transcribe_languages(
                 working_wav,
                 config.transcription_languages,
@@ -1191,6 +1249,7 @@ def handler(
             )
             transcript = assign_speakers(transcript, turns)
             transcript = merge_words(transcript)
+            _progress(job, "transcribe", 100)
 
         roles: dict[str, SpeakerRole] = {
             speaker: "presenter" for speaker in transcript.speakers
@@ -1209,9 +1268,11 @@ def handler(
 
         music = dialogue = None
         if config.separate_music:
+            _progress(job, "separate_music", 15)
             music, dialogue = separate_music(
                 working_wav, workdir, separator=separator
             )
+            _progress(job, "separate_music", 100)
 
         speaker_outputs: dict[str, bytes] = {}
         speaker_labels: dict[str, str] = {}
@@ -1225,6 +1286,7 @@ def handler(
             for key, speaker in zip(speaker_keys, sorted(tracks)):
                 speaker_outputs[key] = tracks[speaker]
                 speaker_labels[key] = speaker
+            _progress(job, "separate_speakers", 100)
 
         outputs = data["outputs"]
         artifacts: list[dict[str, Any]] = []
