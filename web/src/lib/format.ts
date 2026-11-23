@@ -1,5 +1,6 @@
 export function formatClock(seconds: number): string {
-  const totalMs = Math.round(seconds * 1000);
+  const safe = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
+  const totalMs = Math.round(safe * 1000);
   const hours = Math.floor(totalMs / 3_600_000);
   const minutes = Math.floor((totalMs % 3_600_000) / 60_000);
   const secs = Math.floor((totalMs % 60_000) / 1000);
@@ -10,11 +11,12 @@ export function formatClock(seconds: number): string {
 }
 
 export function formatFileSize(bytes: number): string {
-  if (bytes < 1024) {
-    return `${bytes} B`;
+  const safe = Number.isFinite(bytes) ? Math.max(0, bytes) : 0;
+  if (safe < 1024) {
+    return `${Math.round(safe)} B`;
   }
   const units = ["KB", "MB", "GB", "TB"];
-  let value = bytes / 1024;
+  let value = safe / 1024;
   let index = 0;
   while (value >= 1024 && index < units.length - 1) {
     value /= 1024;
@@ -24,7 +26,8 @@ export function formatFileSize(bytes: number): string {
 }
 
 export function formatMediaTime(seconds: number): string {
-  const total = Math.max(0, Math.floor(seconds));
+  const safe = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
+  const total = Math.floor(safe);
   const hours = Math.floor(total / 3600);
   const minutes = Math.floor((total % 3600) / 60);
   const secs = total % 60;
@@ -35,7 +38,7 @@ export function formatMediaTime(seconds: number): string {
 }
 
 export function formatDuration(seconds: number | null): string {
-  if (seconds === null || Number.isNaN(seconds)) {
+  if (seconds === null || !Number.isFinite(seconds) || seconds < 0) {
     return "Unknown";
   }
   const whole = Math.round(seconds);

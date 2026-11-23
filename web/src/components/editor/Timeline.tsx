@@ -560,10 +560,28 @@ export default function Timeline({
             >
               <div
                 role="slider"
+                tabIndex={0}
                 aria-label="Playhead"
                 aria-valuemin={0}
                 aria-valuemax={Math.round(duration)}
                 aria-valuenow={Math.round(currentTime)}
+                aria-valuetext={formatMediaTime(currentTime)}
+                onKeyDown={(event) => {
+                  const step = event.shiftKey ? 15 : 5;
+                  if (event.key === "ArrowLeft") {
+                    event.preventDefault();
+                    onSeek(Math.max(0, getCurrentTime() - step));
+                  } else if (event.key === "ArrowRight") {
+                    event.preventDefault();
+                    onSeek(Math.min(duration, getCurrentTime() + step));
+                  } else if (event.key === "Home") {
+                    event.preventDefault();
+                    onSeek(0);
+                  } else if (event.key === "End") {
+                    event.preventDefault();
+                    onSeek(duration);
+                  }
+                }}
                 onPointerDown={handleHandlePointerDown}
                 onPointerMove={handlePointerMove}
                 onPointerUp={endScrub}

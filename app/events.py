@@ -17,7 +17,7 @@ class _Subscription:
     def __init__(self, broker: "InMemoryEventBroker", job_id: str) -> None:
         self._broker = broker
         self._job_id = job_id
-        self._queue: asyncio.Queue[JobEvent] = asyncio.Queue()
+        self._queue: asyncio.Queue[JobEvent] = asyncio.Queue(maxsize=512)
         broker._subscribers.setdefault(job_id, set()).add(self._queue)
 
     def __aiter__(self) -> "_Subscription":
@@ -40,7 +40,15 @@ class InMemoryEventBroker:
 
     async def publish(self, job_id: str, event: JobEvent) -> None:
         for queue in list(self._subscribers.get(job_id, ())):
-            queue.put_nowait(event)
+            if queue.full():
+                try:
+                    queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+            try:
+                queue.put_nowait(event)
+            except asyncio.QueueFull:
+                pass
 
     def subscribe(self, job_id: str) -> AsyncIterator[JobEvent]:
         return _Subscription(self, job_id)

@@ -420,6 +420,7 @@ class RunpodPipelineRunner:
             if diarization is not None:
                 logger.info("worker diarization: %s", diarization)
 
+            valid_stage_statuses = {"pending", "running", "completed", "skipped", "failed"}
             states = dict(job.stage_states or {})
             now = utcnow().isoformat()
             final_stages = output.get("stages") if isinstance(output, dict) else None
@@ -428,10 +429,18 @@ class RunpodPipelineRunner:
                     if stage not in STAGE_ORDER or not isinstance(raw, dict):
                         continue
                     state = dict(states.get(stage) or {})
+                    raw_status = raw.get("status", "completed")
+                    safe_status = (
+                        raw_status if raw_status in valid_stage_statuses else "completed"
+                    )
+                    try:
+                        safe_percent = max(0, min(100, int(raw.get("percent", 100))))
+                    except (TypeError, ValueError):
+                        safe_percent = 100
                     state.update(
                         {
-                            "status": raw.get("status", "completed"),
-                            "percent": int(raw.get("percent", 100)),
+                            "status": safe_status,
+                            "percent": safe_percent,
                             "started_at": raw.get("started_at") or state.get("started_at") or now,
                             "completed_at": raw.get("completed_at") or now,
                         }
@@ -451,9 +460,13 @@ class RunpodPipelineRunner:
                     states[stage] = state
             job.stage_states = states
 
+            valid_roles = {"presenter", "feeder", "cohost"}
             roles = output.get("speaker_roles") if isinstance(output, dict) else None
             if isinstance(roles, dict):
-                job.speaker_roles = {str(key): value for key, value in roles.items()}
+                job.speaker_roles = {
+                    str(key): (value if value in valid_roles else "presenter")
+                    for key, value in roles.items()
+                }
 
             artifacts = output.get("artifacts") if isinstance(output, dict) else None
             if isinstance(artifacts, list):

@@ -17,7 +17,8 @@ RUN apt-get update \
 RUN ffmpeg -hide_banner -loglevel error -f lavfi \
     -i "sine=frequency=440:duration=0.1" -c:a libmp3lame -b:a 192k \
     -y /tmp/mp3_smoke.mp3 \
-    && test -s /tmp/mp3_smoke.mp3
+    && test -s /tmp/mp3_smoke.mp3 \
+    && rm -f /tmp/mp3_smoke.mp3
 
 RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu128 \
     "torch==2.7.1+cu128" "torchaudio==2.7.1+cu128"
@@ -152,12 +153,17 @@ out, out_rate = enhance(
     run_dir=Path("/opt/resemble-enhance/enhancer_stage2"),
 )
 print("resemble enhance smoke:", tuple(out.shape), out_rate)
+Path("/tmp/resemble_smoke.wav").unlink(missing_ok=True)
 PY
 
-# Verify the studio finishing filters are available in this ffmpeg build.
+# Verify the studio finishing and transcription normalization filters are available in this ffmpeg build.
 RUN ffmpeg -hide_banner -loglevel error -y -f lavfi -i "sine=frequency=440:duration=1" \
     -af "highpass=f=75:poles=2,equalizer=f=120:t=q:w=1:g=2,equalizer=f=320:t=q:w=1:g=-2,equalizer=f=3500:t=q:w=1:g=1.5,deesser=i=0.35:m=0.5:f=0.5,acompressor=threshold=0.126:ratio=2.5:attack=15:release=150:makeup=1:knee=2.5:detection=rms,alimiter=limit=0.891:attack=5:release=50:level=false,loudnorm=I=-16:TP=-1.5:LRA=11" \
-    -ar 48000 -ac 1 /tmp/studio_smoke.wav
+    -ar 48000 -ac 1 /tmp/studio_smoke.wav \
+    && ffmpeg -hide_banner -loglevel error -y -f lavfi -i "sine=frequency=440:duration=1" \
+    -af "dynaudnorm=f=150:g=5:p=0.9:m=15" \
+    -ar 16000 -ac 1 /tmp/dynaudnorm_smoke.wav \
+    && rm -f /tmp/studio_smoke.wav /tmp/dynaudnorm_smoke.wav
 
 RUN python - <<'PY'
 from huggingface_hub import snapshot_download
@@ -229,7 +235,8 @@ with wave.open("/tmp/nemotron_smoke.wav", "wb") as writer:
     writer.writeframes(b"\x00\x00" * 16000)
 PY
 RUN /opt/nemotron/bin/python /opt/nemotron/diarize.py \
-    /tmp/nemotron_smoke.wav /tmp/nemotron_smoke.json
+    /tmp/nemotron_smoke.wav /tmp/nemotron_smoke.json \
+    && rm -f /tmp/nemotron_smoke.wav /tmp/nemotron_smoke.json
 
 ENV HF_HUB_OFFLINE=1
 ENV TRANSFORMERS_OFFLINE=1

@@ -19,7 +19,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   return (
-    <AuthContext.Provider value={{ me: query.data ?? null, isLoading: query.isLoading }}>
+    <AuthContext.Provider
+      value={{
+        me: query.isError ? null : (query.data ?? null),
+        isLoading: query.isLoading,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

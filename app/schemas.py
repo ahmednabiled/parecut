@@ -86,8 +86,8 @@ class ProfileResponse(BaseModel):
 
 class RegisterRequest(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=8)
-    full_name: str = Field(min_length=1)
+    password: str = Field(min_length=8, max_length=256)
+    full_name: str = Field(min_length=1, max_length=120)
 
     @field_validator("full_name")
     @classmethod
@@ -100,7 +100,7 @@ class RegisterRequest(BaseModel):
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(max_length=256)
 
 
 EffectName = Literal[
@@ -113,11 +113,19 @@ EffectName = Literal[
 
 
 class JobCreate(BaseModel):
-    upload_key: str
-    source_filename: str = Field(min_length=1)
+    upload_key: str = Field(min_length=1, max_length=512)
+    source_filename: str = Field(min_length=1, max_length=255)
     fps: FPS = "25"
     pipeline: PipelineConfig = Field(default_factory=PipelineConfig)
     draft: bool = False
+
+    @field_validator("source_filename")
+    @classmethod
+    def _non_blank_filename(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("source_filename must not be blank")
+        return stripped
 
 
 class JobUpdate(BaseModel):
@@ -147,7 +155,7 @@ class SpeakerRolesUpdate(BaseModel):
 
 
 class ProfileUpdate(BaseModel):
-    full_name: str | None = Field(default=None, min_length=1)
+    full_name: str | None = Field(default=None, min_length=1, max_length=120)
     default_fps: str | None = Field(default=None, pattern=r"^(24|25|29\.97|30|50|60)$")
     default_enhance_mix: int | None = Field(default=None, ge=0, le=100)
     default_silence_pad_ms: int | None = Field(default=None, ge=0, le=2000)

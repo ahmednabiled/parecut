@@ -19,6 +19,7 @@ from app.db import get_session
 from app.deps import get_current_user, get_current_user_id, get_settings_dep
 from app.events import EventBroker, get_broker
 from app.models import Job, JobArtifact, User
+from app.ratelimit import rate_limit
 from app.schemas import (
     EffectCreate,
     JobCreate,
@@ -29,6 +30,7 @@ from app.schemas import (
 )
 from app.services.jobs import (
     InsufficientCredits,
+    ProfileNotFound,
     UploadNotFound,
     create_effect_run,
     create_job,
@@ -156,6 +158,12 @@ PEAKS_CACHE: dict[tuple[str, int], list[float]] = {}
 PEAKS_CACHE_LIMIT = 256
 
 
+def _cache_peaks(cache_key: tuple[str, int], peaks: list[float]) -> None:
+    PEAKS_CACHE[cache_key] = peaks
+    while len(PEAKS_CACHE) > PEAKS_CACHE_LIMIT:
+        PEAKS_CACHE.pop(next(iter(PEAKS_CACHE)))
+
+
 def compute_peaks(data: bytes, points: int) -> list[float]:
     try:
         result = subprocess.run(
@@ -178,8 +186,9 @@ def compute_peaks(data: bytes, points: int) -> list[float]:
             input=data,
             check=True,
             capture_output=True,
+            timeout=60,
         )
-    except (OSError, subprocess.CalledProcessError) as exc:
+    except (OSError, subprocess.SubprocessError) as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Could not decode audio for waveform",
@@ -221,7 +230,7 @@ async def peaks_payload(
             cached = json.loads(await storage.get(cache_object))
             if isinstance(cached, list):
                 peaks = [float(value) for value in cached]
-                PEAKS_CACHE[cache_key] = peaks
+                _cache_peaks(cache_key, peaks)
                 return {"peaks": peaks}
     except Exception:
         # A missing or unreadable cache must never block the waveform.
@@ -233,9 +242,7 @@ async def peaks_payload(
         )
     data = await storage.get(key)
     peaks = await asyncio.to_thread(compute_peaks, data, points)
-    PEAKS_CACHE[cache_key] = peaks
-    if len(PEAKS_CACHE) > PEAKS_CACHE_LIMIT:
-        PEAKS_CACHE.pop(next(iter(PEAKS_CACHE)))
+    _cache_peaks(cache_key, peaks)
     try:
         await storage.put(
             cache_object, json.dumps(peaks).encode(), "application/json"
@@ -246,7 +253,12 @@ async def peaks_payload(
     return {"peaks": peaks}
 
 
-@router.post("", response_model=JobRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=JobRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(rate_limit("job"))],
+)
 async def create(
     payload: JobCreate,
     user: User = Depends(get_current_user),
@@ -260,6 +272,10 @@ async def create(
     except UploadNotFound as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Upload not found"
+        ) from exc
+    except ProfileNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found"
         ) from exc
     except InsufficientCredits as exc:
         return insufficient_credits(exc)
@@ -375,14 +391,24 @@ async def delete_job(
     ).all()
 
     storage_keys = {artifact.r2_key for artifact in artifacts}
-    if job.source_r2_key and not job.source_r2_key.startswith("demo/"):
-        storage_keys.add(job.source_r2_key)
+    source_key = job.source_r2_key
 
     for artifact in artifacts:
         await session.delete(artifact)
     for child in children:
         await session.delete(child)
     await session.delete(job)
+    await session.flush()
+
+    if source_key and not source_key.startswith("demo/"):
+        still_referenced = (
+            await session.exec(
+                select(Job.id).where(Job.source_r2_key == source_key).limit(1)
+            )
+        ).first()
+        if still_referenced is None:
+            storage_keys.add(source_key)
+
     await session.commit()
 
     for key in storage_keys:
@@ -429,6 +455,7 @@ async def list_effects(
     "/{job_id}/effects",
     response_model=JobRead,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(rate_limit("job"))],
 )
 async def apply_effect(
     job_id: str,
@@ -445,6 +472,10 @@ async def apply_effect(
         )
     try:
         job = await create_effect_run(session, user, parent, runner, payload)
+    except ProfileNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found"
+        ) from exc
     except InsufficientCredits as exc:
         return insufficient_credits(exc)
     return to_job_read(job)
@@ -635,7 +666,7 @@ async def delete_artifact(
             status_code=status.HTTP_404_NOT_FOUND, detail="Track not found"
         )
 
-    await storage.delete(artifact.r2_key)
+    artifact_key = artifact.r2_key
     await session.delete(artifact)
     await session.flush()
 
@@ -650,6 +681,11 @@ async def delete_artifact(
         if not remaining:
             await session.delete(owner)
     await session.commit()
+
+    try:
+        await storage.delete(artifact_key)
+    except Exception:
+        pass
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

@@ -5,11 +5,13 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from pydantic import BaseModel
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 
 from app.config import Settings
 from app.deps import get_current_user, get_settings_dep
 from app.models import User
+from app.ratelimit import rate_limit
 from app.storage import InvalidToken, ObjectStorage, UploadTooLarge, get_storage
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
@@ -29,8 +31,8 @@ ALLOWED_EXTENSIONS = {
 
 
 class PresignRequest(BaseModel):
-    filename: str
-    size_bytes: int
+    filename: str = Field(min_length=1, max_length=255)
+    size_bytes: int = Field(gt=0)
     content_type: str = "application/octet-stream"
 
 
@@ -45,7 +47,12 @@ def _safe_name(filename: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]", "_", name) or "upload"
 
 
-@router.post("", response_model=PresignResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=PresignResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(rate_limit("upload"))],
+)
 async def presign_upload(
     payload: PresignRequest,
     user: User = Depends(get_current_user),
@@ -126,11 +133,15 @@ async def download_signed(
     if not await storage.exists(key):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
 
-    data = await storage.get(key)
+    total = await storage.size(key)
     media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
-    safe_filename = filename.replace('"', "")
-    return Response(
-        content=data,
+    safe_filename = filename.replace('"', "").replace("\r", "").replace("\n", "")
+    headers = {"Content-Disposition": f'attachment; filename="{safe_filename}"'}
+    if total <= 0:
+        return Response(content=b"", media_type=media_type, headers=headers)
+    headers["Content-Length"] = str(total)
+    return StreamingResponse(
+        storage.iter_range(key, 0, total - 1),
         media_type=media_type,
-        headers={"Content-Disposition": f'attachment; filename="{safe_filename}"'},
+        headers=headers,
     )

@@ -168,6 +168,16 @@ function runProgress(run: Job): number | null {
   return Math.round(total / states.length);
 }
 
+function readStoredCaptions(storageKey: string | null): Record<string, string> {
+  if (!storageKey) return {};
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    return raw ? (JSON.parse(raw) as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
 export default function JobEditor() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -185,8 +195,12 @@ export default function JobEditor() {
   });
   const [selectedTrackId, setSelectedTrackId] = useState("original");
   const [deletingTrackId, setDeletingTrackId] = useState<string | null>(null);
-  const [captionEdits, setCaptionEdits] = useState<Record<string, string>>({});
+  const [captionEditsState, setCaptionEditsState] = useState<{
+    key: string | null;
+    edits: Record<string, string>;
+  } | null>(null);
   const [applyError, setApplyError] = useState<string | null>(null);
+  const [projectError, setProjectError] = useState<string | null>(null);
   const [shortfall, setShortfall] = useState<Shortfall | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
@@ -296,6 +310,18 @@ export default function JobEditor() {
     () => chunkCaptions(segments, chunkWords),
     [segments, chunkWords],
   );
+  const storageKey = transcriptArtifact
+    ? `parecut-captions:${id}:${transcriptArtifact.id}`
+    : null;
+
+  const captionEdits = useMemo(
+    () =>
+      captionEditsState && captionEditsState.key === storageKey
+        ? captionEditsState.edits
+        : readStoredCaptions(storageKey),
+    [captionEditsState, storageKey],
+  );
+
   const editedCues = useMemo(
     () =>
       cues.map((cue) => {
@@ -304,25 +330,6 @@ export default function JobEditor() {
       }),
     [cues, captionEdits],
   );
-
-  const storageKey = transcriptArtifact
-    ? `parecut-captions:${id}:${transcriptArtifact.id}`
-    : null;
-
-  useEffect(() => {
-    if (!storageKey) {
-      setCaptionEdits({});
-      return;
-    }
-    try {
-      const raw = window.localStorage.getItem(storageKey);
-      setCaptionEdits(
-        raw ? (JSON.parse(raw) as Record<string, string>) : {},
-      );
-    } catch {
-      setCaptionEdits({});
-    }
-  }, [storageKey]);
 
   const duration = project?.duration_seconds ?? 0;
   const mutedTracks = useMemo(
@@ -441,10 +448,10 @@ export default function JobEditor() {
       queryClient.setQueryData(["job", id], updated);
       void queryClient.invalidateQueries({ queryKey: ["profile"] });
       setRenaming(false);
-      setApplyError(null);
+      setProjectError(null);
     },
     onError: (error) => {
-      setApplyError(
+      setProjectError(
         error instanceof Error ? error.message : "Could not rename project.",
       );
     },
@@ -461,7 +468,7 @@ export default function JobEditor() {
     },
     onError: (error) => {
       setConfirmDeleteProject(false);
-      setApplyError(
+      setProjectError(
         error instanceof Error ? error.message : "Could not delete project.",
       );
     },
@@ -550,6 +557,8 @@ export default function JobEditor() {
     });
   }, [activeTrackId, soloTrack]);
 
+  const { toggle: togglePlay } = audio;
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (
@@ -566,22 +575,33 @@ export default function JobEditor() {
         (target.tagName === "INPUT" ||
           target.tagName === "TEXTAREA" ||
           target.tagName === "SELECT" ||
-          target.isContentEditable)
+          target.tagName === "BUTTON" ||
+          target.tagName === "A" ||
+          target.isContentEditable ||
+          Boolean(
+            target.closest(
+              'button,a,[role="button"],[role="switch"],[role="slider"]',
+            ),
+          ))
       ) {
         return;
       }
       event.preventDefault();
-      audio.toggle();
+      togglePlay();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [audio.toggle]);
+  }, [togglePlay]);
 
   const handleEditCue = useCallback(
     (cue: CaptionCue, text: string) => {
-      setCaptionEdits((current) => {
+      setCaptionEditsState((prev) => {
+        const base =
+          prev && prev.key === storageKey
+            ? prev.edits
+            : readStoredCaptions(storageKey);
         const key = captionCueKey(cue);
-        const next = { ...current };
+        const next = { ...base };
         if (text === cue.text) delete next[key];
         else next[key] = text;
         if (storageKey) {
@@ -591,7 +611,7 @@ export default function JobEditor() {
             // Editing still works for this session without storage.
           }
         }
-        return next;
+        return { key: storageKey, edits: next };
       });
     },
     [storageKey],
@@ -623,7 +643,7 @@ export default function JobEditor() {
       ? `${base || "captions"}_${trackSlug}.srt`
       : `${base || "captions"}.srt`;
     anchor.click();
-    URL.revokeObjectURL(url);
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   if (!id) {
@@ -823,6 +843,23 @@ export default function JobEditor() {
           </Link>
         </div>
       </div>
+
+      {projectError ? (
+        <div
+          role="alert"
+          className="mt-4 flex shrink-0 items-center justify-between gap-3 rounded-lg border border-error/25 bg-error-container px-4 py-3 text-sm text-on-error-container"
+        >
+          <p>{projectError}</p>
+          <button
+            type="button"
+            onClick={() => setProjectError(null)}
+            aria-label="Dismiss error"
+            className="grid size-6 shrink-0 place-items-center rounded-full text-on-error-container hover:bg-error/20"
+          >
+            <Icon name="close" size={14} />
+          </button>
+        </div>
+      ) : null}
 
       {project.status === "failed" ? (
         <div

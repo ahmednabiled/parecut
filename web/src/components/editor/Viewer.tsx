@@ -124,7 +124,10 @@ export default function Viewer({
           </div>
         ) : current ? (
           <div>
-            <p className="text-[24px] font-medium leading-8 tracking-[-0.01em] text-on-surface">
+            <p
+              dir="auto"
+              className="text-[24px] font-medium leading-8 tracking-[-0.01em] text-on-surface"
+            >
               {current.text}
             </p>
             <p className="mt-3 font-mono text-[12px] text-on-surface-variant">
@@ -159,6 +162,7 @@ export default function Viewer({
                 {editing ? (
                   <input
                     autoFocus
+                    dir="auto"
                     aria-label={`Edit caption ${index + 1} at ${formatMediaTime(cue.start)}`}
                     value={draft}
                     onChange={(event) => setDraft(event.target.value)}
@@ -178,6 +182,7 @@ export default function Viewer({
                 ) : (
                   <button
                     type="button"
+                    dir="auto"
                     onClick={() => onSeek(cue.start)}
                     className="min-w-0 text-left text-[13px] leading-5 text-on-surface"
                   >
@@ -189,6 +194,9 @@ export default function Viewer({
                 )}
                 <button
                   type="button"
+                  onMouseDown={(event) => {
+                    if (editing) event.preventDefault();
+                  }}
                   onClick={() => {
                     if (editing) commit(cue);
                     else startEditing(cue);

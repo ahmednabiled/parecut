@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     seed_demo: bool = True
     orphan_upload_ttl_seconds: int = 86_400
     orphan_upload_cleanup_interval_seconds: int = 3_600
+    rate_limit_enabled: bool | None = None
+    rate_limit_auth_per_minute: int = 20
+    rate_limit_upload_per_minute: int = 30
+    rate_limit_job_per_minute: int = 30
+    trust_proxy_headers: bool = False
     frontend_dist: Path = Path("web/dist")
 
     model_config = SettingsConfigDict(
@@ -50,6 +55,11 @@ class Settings(BaseSettings):
         env_prefix="PARECUT_",
         extra="ignore",
     )
+
+    def is_rate_limit_enabled(self) -> bool:
+        if self.rate_limit_enabled is not None:
+            return self.rate_limit_enabled
+        return self.app_env != "test"
 
     def validate_runtime(self) -> None:
         if self.app_env != "prod":

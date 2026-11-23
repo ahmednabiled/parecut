@@ -18,19 +18,33 @@ export default function Register() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    const trimmedName = fullName.trim();
+    const trimmedEmail = email.trim();
+    if (!trimmedName) {
+      setError("Enter your full name.");
+      return;
+    }
+    if (!trimmedEmail || !trimmedEmail.includes("@")) {
+      setError("Enter a valid email address.");
+      return;
+    }
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters.");
+      return;
+    }
     setError(null);
     setPending(true);
     try {
       const data = await apiFetch<SessionUser>("/api/auth/register", {
         method: "POST",
         body: JSON.stringify({
-          full_name: fullName,
-          email,
+          full_name: trimmedName,
+          email: trimmedEmail,
           password,
         }),
       });
       queryClient.setQueryData(["me"], data);
-      queryClient.invalidateQueries({ queryKey: ["profile"] });
+      void queryClient.invalidateQueries({ queryKey: ["profile"] });
       navigate("/", { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Unable to create your account.");

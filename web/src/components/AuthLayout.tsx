@@ -20,7 +20,7 @@ export default function AuthLayout({ title, subtitle, children }: AuthLayoutProp
               <Link to="/" className="mb-10 inline-block">
                 <img
                   src="/brand/login-logo.png"
-                  alt="Pare Cut"
+                  alt="Parecut"
                   className="h-24 w-auto"
                 />
               </Link>
@@ -69,7 +69,7 @@ export default function AuthLayout({ title, subtitle, children }: AuthLayoutProp
           <div className="w-full max-w-md">
             <div className="mb-10 flex items-center justify-between lg:hidden">
               <Link to="/">
-                <img src="/brand/login-logo.png" alt="Pare Cut" className="h-16 w-auto" />
+                <img src="/brand/login-logo.png" alt="Parecut" className="h-16 w-auto" />
               </Link>
               <Link
                 to="/"

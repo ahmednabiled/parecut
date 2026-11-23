@@ -28,4 +28,21 @@ describe("Login", () => {
     await userEvent.click(screen.getByRole("button", { name: /sign in/i }));
     expect(await screen.findByText("Invalid email or password")).toBeInTheDocument();
   });
+
+  it("validates empty fields before sending a login request", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <Login />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    expect(screen.getByRole("alert")).toHaveTextContent(/enter your email/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

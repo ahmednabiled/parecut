@@ -784,3 +784,203 @@ def test_assign_speakers_uses_nearest_turn_when_word_falls_in_gap():
     )
     assigned = assign_speakers(transcript, turns)
     assert assigned.segments[0].speaker == "SPEAKER_01"
+
+
+def test_normalize_for_transcription_creates_16k_copy_without_mutating_source(tmp_path):
+    import struct
+    import math
+    from runpod_app.worker import _normalize_for_transcription
+
+    src = tmp_path / "working.wav"
+    sr = 48000
+    # 1s loud 440Hz tone followed by 1s very quiet (-30dB) 440Hz tone
+    loud = [int(20000 * math.sin(2 * math.pi * 440 * i / sr)) for i in range(sr)]
+    quiet = [int(600 * math.sin(2 * math.pi * 440 * i / sr)) for i in range(sr)]
+    samples = loud + quiet
+    with wave.open(str(src), "wb") as writer:
+        writer.setnchannels(1)
+        writer.setsampwidth(2)
+        writer.setframerate(sr)
+        writer.writeframes(struct.pack(f"<{len(samples)}h", *samples))
+
+    original_bytes = src.read_bytes()
+    out = tmp_path / "norm.wav"
+    result = _normalize_for_transcription(src, out)
+
+    assert result == out
+    assert out.exists()
+    assert src.read_bytes() == original_bytes
+    with wave.open(str(out), "rb") as reader:
+        assert reader.getframerate() == 16000
+        assert reader.getnchannels() == 1
+        frames = reader.readframes(reader.getnframes())
+    norm_samples = struct.unpack(f"<{len(frames) // 2}h", frames)
+    half = len(norm_samples) // 2
+    quiet_peak_after = max(abs(s) for s in norm_samples[half:])
+    assert quiet_peak_after > 1500
+
+
+def test_normalize_for_transcription_falls_back_on_ffmpeg_error(tmp_path, monkeypatch):
+    from runpod_app.worker import _normalize_for_transcription
+
+    src = tmp_path / "working.wav"
+    src.write_bytes(make_wav(0.5))
+
+    def fail(*args, **kwargs):
+        raise subprocess.CalledProcessError(1, "ffmpeg", stderr=b"filter error")
+
+    monkeypatch.setattr("runpod_app.worker.subprocess.run", fail)
+    result = _normalize_for_transcription(src, tmp_path / "norm.wav")
+    assert result == src
+
+
+def test_transcribe_languages_normalizes_temp_copy_once_and_cleans_up(
+    tmp_path, monkeypatch
+):
+    src = tmp_path / "working.wav"
+    src.write_bytes(make_wav(0.5))
+    original_bytes = src.read_bytes()
+
+    seen_paths: list[Path] = []
+    norm_calls: list[tuple[Path, Path]] = []
+
+    def fake_normalize(input_path: Path, output_path: Path) -> Path:
+        norm_calls.append((input_path, output_path))
+        output_path.write_bytes(b"normalized-temp")
+        return output_path
+
+    def fake_transcribe_lang(
+        wav_path: Path, language: str, dialect: str | None = None
+    ) -> list[LanguageSegment]:
+        seen_paths.append(wav_path)
+        assert wav_path.exists()
+        assert wav_path != src
+        text = "hello" if language == "en" else "مرحبا"
+        start = 0.0 if language == "en" else 1.0
+        return [
+            LanguageSegment(
+                language=language,
+                start=start,
+                end=start + 0.5,
+                text=text,
+                confidence=0.9,
+                words=[(start, start + 0.5, text)],
+            )
+        ]
+
+    monkeypatch.setattr(
+        "runpod_app.worker._normalize_for_transcription", fake_normalize
+    )
+    monkeypatch.setattr(
+        "runpod_app.worker._transcribe_language", fake_transcribe_lang
+    )
+
+    transcript = transcribe_languages(src, ["en", "ar"])
+    assert len(norm_calls) == 1
+    assert norm_calls[0][0] == src
+    assert len(seen_paths) == 2
+    assert seen_paths[0] == seen_paths[1] == norm_calls[0][1]
+    assert not norm_calls[0][1].exists()
+    assert src.read_bytes() == original_bytes
+    assert len(transcript.segments) == 2
+
+
+def test_transcribe_raw_uses_gentler_silero_vad_parameters(tmp_path, monkeypatch):
+    from runpod_app.worker import _transcribe_raw
+
+    captured: dict[str, object] = {}
+
+    class FakeWord:
+        start = 0.1
+        end = 0.4
+        word = "مرحبا"
+        probability = 0.9
+
+    class FakeSegment:
+        start = 0.1
+        end = 0.4
+        text = "مرحبا"
+        avg_logprob = -0.2
+        words = [FakeWord()]
+
+    class FakeModel:
+        def transcribe(self, audio, **kwargs):
+            captured.update(kwargs)
+            return [FakeSegment()], None
+
+    fake_whisperx = types.ModuleType("whisperx")
+    fake_whisperx.load_audio = lambda path: b"pcm"
+    monkeypatch.setitem(sys.modules, "whisperx", fake_whisperx)
+    monkeypatch.setattr(
+        "runpod_app.worker._get_raw_whisper_model", lambda language: FakeModel()
+    )
+
+    segments = _transcribe_raw(tmp_path / "norm.wav", "ar", "egyptian")
+    assert len(segments) == 1
+    assert captured["vad_filter"] is True
+    assert captured["vad_parameters"] == {
+        "threshold": 0.35,
+        "min_silence_duration_ms": 500,
+    }
+
+
+def test_transcribe_language_skips_align_when_segments_empty(tmp_path, monkeypatch):
+    from runpod_app.worker import _transcribe_language
+
+    class FakeModel:
+        def transcribe(self, audio, **kwargs):
+            return {"segments": []}
+
+    fake_whisperx = types.ModuleType("whisperx")
+    fake_whisperx.load_audio = lambda path: b"pcm"
+
+    def fail_align(*args, **kwargs):
+        raise AssertionError("align should not be called for empty segments")
+
+    fake_whisperx.align = fail_align
+    monkeypatch.setitem(sys.modules, "whisperx", fake_whisperx)
+    monkeypatch.setattr("runpod_app.worker._get_whisper_model", lambda: FakeModel())
+
+    assert _transcribe_language(tmp_path / "norm.wav", "en") == []
+
+
+def test_redact_url_strips_query_string():
+    from runpod_app.worker import _redact_url
+
+    url = "https://r2.example.com/bucket/clip.wav?X-Amz-Signature=secret&X-Amz-Expires=300"
+    assert _redact_url(url) == "https://r2.example.com/bucket/clip.wav"
+    assert _redact_url("https://r2.example.com/bucket/clip.wav") == (
+        "https://r2.example.com/bucket/clip.wav"
+    )
+
+
+def test_gated_speaker_tracks_handles_unsafe_speaker_names_in_memory(tmp_path):
+    from runpod_app.worker import gated_speaker_tracks
+
+    wav_path = tmp_path / "working.wav"
+    wav_path.write_bytes(make_wav(1.0))
+    tracks = gated_speaker_tracks(
+        wav_path, [SpeakerTurn("../weird:speaker/01", 0.0, 0.5)]
+    )
+    assert "../weird:speaker/01" in tracks
+    assert _frames(tracks["../weird:speaker/01"]) == _frames(wav_path.read_bytes())
+    assert list(tmp_path.iterdir()) == [wav_path]
+
+
+def test_encode_audio_cleans_up_temp_files(tmp_path):
+    encoded = _encode_audio(make_wav(0.5), tmp_path, "mp3", "cleanup_test")
+    assert encoded
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_convert_to_wav_and_studio_polish_wrap_oserror(tmp_path, monkeypatch):
+    from runpod_app.worker import _convert_to_wav, _studio_polish
+
+    def fail(*args, **kwargs):
+        raise OSError("ffmpeg not found")
+
+    monkeypatch.setattr("runpod_app.worker.subprocess.run", fail)
+    with pytest.raises(RuntimeError, match="ffmpeg conversion failed"):
+        _convert_to_wav(tmp_path / "in.wav", tmp_path / "out.wav")
+    with pytest.raises(RuntimeError, match="studio polish failed"):
+        _studio_polish(tmp_path / "in.wav", tmp_path / "out.wav", StudioChain())

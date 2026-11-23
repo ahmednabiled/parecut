@@ -1,4 +1,4 @@
-import { useId, useEffect, useState } from "react";
+import { useId, useState } from "react";
 import type {
   ArabicDialect,
   AudioFormat,
@@ -563,54 +563,69 @@ export default function Inspector({
     ...defaultStudio,
   }));
   const [studioOpen, setStudioOpen] = useState(false);
-  const [languages, setLanguages] = useState<TranscriptionLanguage[]>(() => {
-    const initial = (defaultLanguages ?? DEFAULT_LANGUAGES).filter(
-      (language) => language === "en" || language === "ar",
-    );
-    return initial.length > 0 ? initial : DEFAULT_LANGUAGES;
-  });
-  const [audioFormat, setAudioFormat] = useState<AudioFormat>(
-    defaultAudioFormat ?? DEFAULT_AUDIO_FORMAT,
-  );
-  const [dialect, setDialect] = useState<ArabicDialect>(
-    defaultDialect ?? DEFAULT_ARABIC_DIALECT,
-  );
-
-  function toggleLanguage(language: TranscriptionLanguage) {
-    setLanguages((current) => {
-      if (current.includes(language)) {
-        return current.length === 1
-          ? current
-          : current.filter((item) => item !== language);
-      }
-      return [...current, language];
-    });
-  }
-
   const lastTranscribe = latestRun(effects, "transcribe");
-  useEffect(() => {
-    const next = lastTranscribe?.pipeline_config.transcription_languages;
-    if (next && next.length > 0) {
-      setLanguages(next);
-    }
-  }, [lastTranscribe?.id]);
-  useEffect(() => {
-    const next = lastTranscribe?.pipeline_config.arabic_dialect;
-    if (next) {
-      setDialect(next);
-    }
-  }, [lastTranscribe?.id]);
-
   const lastAudioRun = [...effects].reverse().find((run) => {
     const definition = EFFECTS.find((item) => item.name === run.effect);
     return definition?.producesAudio;
   });
-  useEffect(() => {
-    const next = lastAudioRun?.pipeline_config.audio_format;
-    if (next === "mp3" || next === "wav") {
-      setAudioFormat(next);
-    }
-  }, [lastAudioRun?.id]);
+
+  const [languageOverride, setLanguageOverride] = useState<{
+    runId: string | undefined;
+    value: TranscriptionLanguage[];
+  } | null>(null);
+  const [dialectOverride, setDialectOverride] = useState<{
+    runId: string | undefined;
+    value: ArabicDialect;
+  } | null>(null);
+  const [audioFormatOverride, setAudioFormatOverride] = useState<{
+    runId: string | undefined;
+    value: AudioFormat;
+  } | null>(null);
+
+  const baseLanguages = (() => {
+    const fromRun = lastTranscribe?.pipeline_config.transcription_languages;
+    if (fromRun && fromRun.length > 0) return fromRun;
+    const initial = (defaultLanguages ?? DEFAULT_LANGUAGES).filter(
+      (language) => language === "en" || language === "ar",
+    );
+    return initial.length > 0 ? initial : DEFAULT_LANGUAGES;
+  })();
+  const languages =
+    languageOverride !== null && languageOverride.runId === lastTranscribe?.id
+      ? languageOverride.value
+      : baseLanguages;
+
+  const dialect =
+    dialectOverride !== null && dialectOverride.runId === lastTranscribe?.id
+      ? dialectOverride.value
+      : (lastTranscribe?.pipeline_config.arabic_dialect ??
+        defaultDialect ??
+        DEFAULT_ARABIC_DIALECT);
+
+  const runAudioFormat = lastAudioRun?.pipeline_config.audio_format;
+  const audioFormat =
+    audioFormatOverride !== null && audioFormatOverride.runId === lastAudioRun?.id
+      ? audioFormatOverride.value
+      : runAudioFormat === "mp3" || runAudioFormat === "wav"
+        ? runAudioFormat
+        : (defaultAudioFormat ?? DEFAULT_AUDIO_FORMAT);
+
+  function toggleLanguage(language: TranscriptionLanguage) {
+    const next = languages.includes(language)
+      ? languages.length === 1
+        ? languages
+        : languages.filter((item) => item !== language)
+      : [...languages, language];
+    setLanguageOverride({ runId: lastTranscribe?.id, value: next });
+  }
+
+  function setDialect(value: ArabicDialect) {
+    setDialectOverride({ runId: lastTranscribe?.id, value });
+  }
+
+  function setAudioFormat(value: AudioFormat) {
+    setAudioFormatOverride({ runId: lastAudioRun?.id, value });
+  }
 
   const srt = transcriptJob?.artifacts.find(
     (artifact) =>

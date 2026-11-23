@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState, type FormEvent } from "react";
-import { apiFetch } from "../api/client";
+import { useState, type FormEvent } from "react";
+import { ApiError, apiFetch } from "../api/client";
 import type { ProfileResponse, SessionUser } from "../api/types";
 
 const FPS_OPTIONS = ["24", "25", "29.97", "30", "50", "60"];
@@ -10,6 +10,13 @@ const fieldClass =
 
 const labelClass = "mb-2 block text-[13px] font-medium text-on-surface-variant";
 
+interface SettingsDraft {
+  fullName: string;
+  fps: string;
+  mix: number;
+  pad: number;
+}
+
 export default function Settings() {
   const queryClient = useQueryClient();
   const profileQuery = useQuery<ProfileResponse>({
@@ -17,24 +24,26 @@ export default function Settings() {
     queryFn: () => apiFetch<ProfileResponse>("/api/profile"),
   });
 
-  const [fullName, setFullName] = useState("");
-  const [fps, setFps] = useState("25");
-  const [mix, setMix] = useState(80);
-  const [pad, setPad] = useState(150);
+  const [draft, setDraft] = useState<SettingsDraft | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    const data = profileQuery.data;
-    if (!data) return;
-    setFullName(data.user.full_name);
-    setFps(data.profile.default_fps);
-    setMix(data.profile.default_enhance_mix);
-    setPad(data.profile.default_silence_pad_ms);
-  }, [profileQuery.data]);
-
   const saved = profileQuery.data;
+  const current: SettingsDraft = draft ?? {
+    fullName: saved?.user.full_name ?? "",
+    fps: saved?.profile.default_fps ?? "25",
+    mix: saved?.profile.default_enhance_mix ?? 80,
+    pad: saved?.profile.default_silence_pad_ms ?? 150,
+  };
+  const { fullName, fps, mix, pad } = current;
+
+  function updateDraft(patch: Partial<SettingsDraft>) {
+    setDraft({ ...current, ...patch });
+    setNotice(null);
+    setError(null);
+  }
+
   const isDirty = Boolean(
     saved &&
       (fullName !== saved.user.full_name ||
@@ -44,17 +53,17 @@ export default function Settings() {
   );
 
   function reset() {
-    if (!saved) return;
-    setFullName(saved.user.full_name);
-    setFps(saved.profile.default_fps);
-    setMix(saved.profile.default_enhance_mix);
-    setPad(saved.profile.default_silence_pad_ms);
+    setDraft(null);
     setNotice(null);
     setError(null);
   }
 
   async function save(event: FormEvent) {
     event.preventDefault();
+    if (!fullName.trim()) {
+      setError("Full name cannot be empty.");
+      return;
+    }
     setSaving(true);
     setNotice(null);
     setError(null);
@@ -62,19 +71,24 @@ export default function Settings() {
       const data = await apiFetch<ProfileResponse>("/api/profile", {
         method: "PATCH",
         body: JSON.stringify({
-          full_name: fullName,
+          full_name: fullName.trim(),
           default_fps: fps,
           default_enhance_mix: mix,
-          default_silence_pad_ms: pad,
+          default_silence_pad_ms: Math.max(0, Math.min(2000, Math.round(pad))),
         }),
       });
       queryClient.setQueryData(["profile"], data);
-      queryClient.setQueryData<SessionUser | undefined>(["me"], (current) =>
-        current ? { ...current, user: data.user, profile: data.profile } : current,
+      queryClient.setQueryData<SessionUser | undefined>(["me"], (prev) =>
+        prev ? { ...prev, user: data.user, profile: data.profile } : prev,
       );
+      setDraft(null);
       setNotice("Settings saved.");
-    } catch {
-      setError("Could not save your settings. Try again.");
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : "Could not save your settings. Try again.",
+      );
     } finally {
       setSaving(false);
     }
@@ -89,128 +103,161 @@ export default function Settings() {
         Defaults apply to new projects. Existing deliverables are unchanged.
       </p>
 
-      <form onSubmit={save} className="mt-8">
-        <div className="divide-y divide-outline-variant rounded-xl border border-outline-variant bg-surface-container">
-          <section className="p-6">
-            <h2 className="text-[15px] font-medium text-on-surface">Profile</h2>
-            <div className="mt-4">
-              <label htmlFor="full-name" className={labelClass}>
-                Full name
-              </label>
-              <input
-                id="full-name"
-                value={fullName}
-                onChange={(event) => setFullName(event.target.value)}
-                className={fieldClass}
-              />
-            </div>
-            <p className="mt-3 text-[13px] text-on-surface-variant">
-              Signed in as {profileQuery.data?.user.email ?? "…"}
-            </p>
-          </section>
-
-          <section className="p-6">
-            <h2 className="text-[15px] font-medium text-on-surface">
-              Timeline defaults
-            </h2>
-
-            <div className="mt-4">
-              <label htmlFor="fps" className={labelClass}>
-                Frame rate
-              </label>
-              <select
-                id="fps"
-                value={fps}
-                onChange={(event) => setFps(event.target.value)}
-                className="h-12 w-full rounded border border-outline bg-surface-container-low px-4 text-[15px] text-on-surface transition-[border-color,background-color] duration-150 ease-standard hover:border-on-surface-variant focus:border-on-surface"
-              >
-                {FPS_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option} fps
-                  </option>
-                ))}
-              </select>
-              <p className="mt-2 text-[13px] text-on-surface-variant">
-                Timecodes in ROUGH-CUT.md snap to this rate.
-              </p>
-            </div>
-
-            <div className="mt-6">
-              <div className="flex items-center justify-between">
-                <label htmlFor="mix" className={labelClass}>
-                  Enhancement mix
-                </label>
-                <span className="font-mono text-[13px] text-on-surface">{mix}%</span>
-              </div>
-              <input
-                id="mix"
-                type="range"
-                min={0}
-                max={100}
-                value={mix}
-                onChange={(event) => setMix(Number(event.target.value))}
-                className="mt-3 w-full accent-primary"
-              />
-              <div className="mt-1 flex justify-between font-mono text-[11px] text-on-surface-variant">
-                <span>0% · Dry</span>
-                <span>100% · Restored</span>
-              </div>
-            </div>
-
-            <div className="mt-6">
-              <label htmlFor="pad" className={labelClass}>
-                Breath pad (ms)
-              </label>
-              <input
-                id="pad"
-                type="number"
-                min={0}
-                max={2000}
-                step={10}
-                value={pad}
-                onChange={(event) => setPad(Number(event.target.value))}
-                className="h-12 w-36 rounded border border-outline bg-transparent px-4 font-mono text-[15px] text-on-surface transition-[border-color,background-color] duration-150 ease-standard hover:border-on-surface-variant focus:border-on-surface"
-              />
-            </div>
-          </section>
-        </div>
-
-        {notice ? (
-          <p className="mt-5 rounded-lg bg-surface-container-high px-4 py-3 text-sm text-on-surface">
-            {notice}
-          </p>
-        ) : null}
-        {error ? (
-          <p className="mt-5 rounded-lg border border-error/25 bg-error-container px-4 py-3 text-sm text-on-error-container">
-            {error}
-          </p>
-        ) : null}
-
-        <div className="mt-6 flex flex-wrap items-center gap-3">
+      {profileQuery.isError ? (
+        <div
+          role="alert"
+          className="mt-8 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-error/25 bg-error-container px-4 py-3 text-sm text-on-error-container"
+        >
+          <p>Could not load your settings. Try again.</p>
           <button
-            type="submit"
-            disabled={saving || profileQuery.isPending}
-            className="h-10 rounded-[20px] bg-primary px-5 text-sm font-semibold text-on-primary transition-colors duration-150 ease-standard hover:bg-[#dcdcdc] active:bg-[#c9c9c9] disabled:cursor-not-allowed disabled:opacity-50"
+            type="button"
+            onClick={() => void profileQuery.refetch()}
+            className="inline-flex h-8 items-center rounded-[16px] border border-error/30 px-3 text-[12px] font-medium text-on-error-container transition-colors duration-150 ease-standard hover:bg-error/15"
           >
-            {saving ? "Saving…" : "Save settings"}
+            Retry
           </button>
-          {isDirty ? (
-            <>
-              <button
-                type="button"
-                onClick={reset}
-                disabled={saving}
-                className="h-10 rounded-[20px] border border-outline px-4 text-sm font-medium text-on-surface transition-colors duration-150 ease-standard hover:bg-surface-container-high disabled:opacity-50"
-              >
-                Reset
-              </button>
-              <span className="text-[12px] text-on-surface-variant">
-                Unsaved changes
-              </span>
-            </>
-          ) : null}
         </div>
-      </form>
+      ) : (
+        <form onSubmit={save} className="mt-8">
+          <div className="divide-y divide-outline-variant rounded-xl border border-outline-variant bg-surface-container">
+            <section className="p-6">
+              <h2 className="text-[15px] font-medium text-on-surface">Profile</h2>
+              <div className="mt-4">
+                <label htmlFor="full-name" className={labelClass}>
+                  Full name
+                </label>
+                <input
+                  id="full-name"
+                  value={fullName}
+                  disabled={profileQuery.isPending || saving}
+                  onChange={(event) =>
+                    updateDraft({ fullName: event.target.value })
+                  }
+                  className={fieldClass}
+                />
+              </div>
+              <p className="mt-3 text-[13px] text-on-surface-variant">
+                Signed in as {profileQuery.data?.user.email ?? "…"}
+              </p>
+            </section>
+
+            <section className="p-6">
+              <h2 className="text-[15px] font-medium text-on-surface">
+                Timeline defaults
+              </h2>
+
+              <div className="mt-4">
+                <label htmlFor="fps" className={labelClass}>
+                  Frame rate
+                </label>
+                <select
+                  id="fps"
+                  value={fps}
+                  disabled={profileQuery.isPending || saving}
+                  onChange={(event) => updateDraft({ fps: event.target.value })}
+                  className="h-12 w-full rounded border border-outline bg-surface-container-low px-4 text-[15px] text-on-surface transition-[border-color,background-color] duration-150 ease-standard hover:border-on-surface-variant focus:border-on-surface"
+                >
+                  {FPS_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option} fps
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-2 text-[13px] text-on-surface-variant">
+                  Timecodes in ROUGH-CUT.md snap to this rate.
+                </p>
+              </div>
+
+              <div className="mt-6">
+                <div className="flex items-center justify-between">
+                  <label htmlFor="mix" className={labelClass}>
+                    Enhancement mix
+                  </label>
+                  <span className="font-mono text-[13px] text-on-surface">{mix}%</span>
+                </div>
+                <input
+                  id="mix"
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={mix}
+                  disabled={profileQuery.isPending || saving}
+                  onChange={(event) =>
+                    updateDraft({ mix: Number(event.target.value) })
+                  }
+                  className="mt-3 w-full accent-primary"
+                />
+                <div className="mt-1 flex justify-between font-mono text-[11px] text-on-surface-variant">
+                  <span>0% · Dry</span>
+                  <span>100% · Restored</span>
+                </div>
+              </div>
+
+              <div className="mt-6">
+                <label htmlFor="pad" className={labelClass}>
+                  Breath pad (ms)
+                </label>
+                <input
+                  id="pad"
+                  type="number"
+                  min={0}
+                  max={2000}
+                  step={10}
+                  value={pad}
+                  disabled={profileQuery.isPending || saving}
+                  onChange={(event) => {
+                    const next = Number(event.target.value);
+                    if (Number.isFinite(next)) updateDraft({ pad: next });
+                  }}
+                  className="h-12 w-36 rounded border border-outline bg-transparent px-4 font-mono text-[15px] text-on-surface transition-[border-color,background-color] duration-150 ease-standard hover:border-on-surface-variant focus:border-on-surface"
+                />
+              </div>
+            </section>
+          </div>
+
+          {notice ? (
+            <p
+              role="status"
+              className="mt-5 rounded-lg bg-surface-container-high px-4 py-3 text-sm text-on-surface"
+            >
+              {notice}
+            </p>
+          ) : null}
+          {error ? (
+            <p
+              role="alert"
+              className="mt-5 rounded-lg border border-error/25 bg-error-container px-4 py-3 text-sm text-on-error-container"
+            >
+              {error}
+            </p>
+          ) : null}
+
+          <div className="mt-6 flex flex-wrap items-center gap-3">
+            <button
+              type="submit"
+              disabled={!isDirty || saving || profileQuery.isPending}
+              className="h-10 rounded-[20px] bg-primary px-5 text-sm font-semibold text-on-primary transition-colors duration-150 ease-standard hover:bg-[#dcdcdc] active:bg-[#c9c9c9] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {saving ? "Saving…" : "Save settings"}
+            </button>
+            {isDirty ? (
+              <>
+                <button
+                  type="button"
+                  onClick={reset}
+                  disabled={saving}
+                  className="h-10 rounded-[20px] border border-outline px-4 text-sm font-medium text-on-surface transition-colors duration-150 ease-standard hover:bg-surface-container-high disabled:opacity-50"
+                >
+                  Reset
+                </button>
+                <span className="text-[12px] text-on-surface-variant">
+                  Unsaved changes
+                </span>
+              </>
+            ) : null}
+          </div>
+        </form>
+      )}
     </div>
   );
 }

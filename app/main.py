@@ -1,8 +1,9 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -11,12 +12,50 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.config import Settings, get_settings
 from app.db import create_engine
 from app.events import InMemoryEventBroker
+from app.ratelimit import RateLimiter
 from app.routers import auth, jobs, profile, uploads
 from app.seed import reconcile_orphan_jobs, seed_demo
 from app.services.cleanup import periodic_cleanup
 from app.services.pipeline import MockPipelineRunner
 from app.services.runpod import HttpRunpodClient, RunpodPipelineRunner
 from app.storage import LocalObjectStorage, R2ObjectStorage
+
+logger = logging.getLogger(__name__)
+
+
+class SecurityHeadersMiddleware:
+    """Pure ASGI middleware that attaches baseline security headers without buffering streams."""
+
+    def __init__(self, app, *, is_prod: bool = False) -> None:
+        self.app = app
+        headers: list[tuple[bytes, bytes]] = [
+            (b"x-content-type-options", b"nosniff"),
+            (b"x-frame-options", b"DENY"),
+            (b"referrer-policy", b"strict-origin-when-cross-origin"),
+            (b"permissions-policy", b"camera=(), microphone=(), geolocation=()"),
+        ]
+        if is_prod:
+            headers.append(
+                (b"strict-transport-security", b"max-age=31536000; includeSubDomains")
+            )
+        self._headers = headers
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_headers(message) -> None:
+            if message["type"] == "http.response.start":
+                raw_headers = list(message.get("headers", []))
+                existing = {name.lower() for name, _ in raw_headers}
+                for name, value in self._headers:
+                    if name not in existing:
+                        raw_headers.append((name, value))
+                message = {**message, "headers": raw_headers}
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -55,9 +94,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             runpod_client = getattr(app.state, "runpod_client", None)
             if runpod_client is not None:
                 await runpod_client.aclose()
+            await app.state.engine.dispose()
 
     app = FastAPI(title="Parecut", version="0.1.0", lifespan=lifespan)
+    app.add_middleware(SecurityHeadersMiddleware, is_prod=settings.app_env == "prod")
     app.state.settings = settings
+    app.state.rate_limiter = RateLimiter()
     settings.storage_dir.mkdir(parents=True, exist_ok=True)
 
     engine = create_engine(settings)
@@ -99,14 +141,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             settings,
         )
 
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(request: Request, exc: Exception):
+        logger.exception(
+            "Unhandled error on %s %s", request.method, request.url.path
+        )
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal server error"},
+        )
+
     @app.get("/api/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
     @app.get("/api/ready")
-    async def ready() -> dict[str, str]:
-        async with app.state.sessionmaker() as session:
-            await session.exec(text("SELECT 1"))
+    async def ready():
+        try:
+            async with app.state.sessionmaker() as session:
+                await session.exec(text("SELECT 1"))
+        except Exception:
+            logger.exception("Readiness check failed")
+            return JSONResponse(
+                status_code=503,
+                content={"status": "unavailable", "detail": "Database unavailable"},
+            )
         return {"status": "ready"}
 
     app.include_router(auth.router)

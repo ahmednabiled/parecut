@@ -22,4 +22,12 @@ describe("format helpers", () => {
     expect(formatMediaTime(65)).toBe("1:05");
     expect(formatMediaTime(3665)).toBe("1:01:05");
   });
+
+  it("handles negative and non-finite numbers safely", () => {
+    expect(formatClock(-5)).toBe("00:00:00.000");
+    expect(formatClock(Number.NaN)).toBe("00:00:00.000");
+    expect(formatMediaTime(Number.NaN)).toBe("0:00");
+    expect(formatFileSize(-10)).toBe("0 B");
+    expect(formatDuration(-1)).toBe("Unknown");
+  });
 });

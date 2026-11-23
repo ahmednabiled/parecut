@@ -6,7 +6,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.db import get_session
 from app.deps import get_current_user
-from app.models import CreditLedger, Job, JobArtifact, User, UserProfile
+from app.models import CreditLedger, Job, JobArtifact, User, UserProfile, utcnow
 from app.schemas import (
     LedgerRead,
     ProfileResponse,
@@ -39,16 +39,17 @@ async def _build_response(
         )
     ).all()
 
-    artifacts = (
-        await session.exec(
-            select(JobArtifact)
-            .where(JobArtifact.job_id.in_([job.id for job in jobs]))
-            .order_by(JobArtifact.created_at)
-        )
-    ).all()
     grouped: dict[str, list[JobArtifact]] = defaultdict(list)
-    for artifact in artifacts:
-        grouped[artifact.job_id].append(artifact)
+    if jobs:
+        artifacts = (
+            await session.exec(
+                select(JobArtifact)
+                .where(JobArtifact.job_id.in_([job.id for job in jobs]))
+                .order_by(JobArtifact.created_at)
+            )
+        ).all()
+        for artifact in artifacts:
+            grouped[artifact.job_id].append(artifact)
 
     return ProfileResponse(
         user=to_user_read(user),
@@ -95,6 +96,7 @@ async def update_profile(
     for field in ("default_fps", "default_enhance_mix", "default_silence_pad_ms"):
         if field in changes:
             setattr(profile, field, changes[field])
+    profile.updated_at = utcnow()
     session.add(profile)
     await session.commit()
 

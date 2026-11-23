@@ -1,3 +1,4 @@
+import io
 import json
 import logging
 import math
@@ -96,6 +97,21 @@ def _cuda_usable() -> bool:
     return _CUDA_OK
 
 
+def _release_cuda_cache() -> None:
+    if _CUDA_OK is not True:
+        return
+    try:
+        import torch
+
+        torch.cuda.empty_cache()
+    except Exception:
+        return
+
+
+def _redact_url(url: str) -> str:
+    return url.split("?", 1)[0]
+
+
 @dataclass
 class SpeakerTurn:
     speaker: str
@@ -116,6 +132,9 @@ class LanguageSegment:
 DEFAULT_GPU_STAGES = "noise_reduction,enhance,separate_music"
 DF_CHUNK_SECONDS = 120
 DF_OVERLAP_SECONDS = 2
+FFMPEG_TIMEOUT_SECONDS = 600
+TRANSCRIBE_DYNAUDNORM_FILTER = "dynaudnorm=f=150:g=5:p=0.9:m=15"
+RAW_VAD_PARAMETERS = {"threshold": 0.35, "min_silence_duration_ms": 500}
 
 ARABIC_DIALECT_PROMPTS = {
     "auto": (
@@ -240,15 +259,68 @@ def _convert_to_wav(
             ],
             check=True,
             capture_output=True,
+            timeout=FFMPEG_TIMEOUT_SECONDS,
         )
-    except subprocess.CalledProcessError as exc:
-        stderr = (exc.stderr or b"").decode("utf-8", "replace")
-        raise RuntimeError(f"ffmpeg conversion failed: {stderr[-1000:]}") from exc
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+        stderr = getattr(exc, "stderr", None)
+        detail = (
+            (stderr or b"").decode("utf-8", "replace")
+            if isinstance(stderr, bytes)
+            else str(stderr or exc)
+        )
+        raise RuntimeError(f"ffmpeg conversion failed: {detail[-1000:]}") from exc
+
+
+def _normalize_for_transcription(input_path: Path, output_path: Path) -> Path:
+    """Apply dynamic audio normalization to a temporary copy for ASR only.
+
+    Lifts quiet or off-camera speakers so Whisper and Silero VAD do not drop
+    them, without modifying the working WAV or any output audio artifacts.
+    Falls back to ``input_path`` if normalization fails.
+    """
+    try:
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                str(input_path),
+                "-af",
+                TRANSCRIBE_DYNAUDNORM_FILTER,
+                "-ar",
+                "16000",
+                "-ac",
+                "1",
+                "-c:a",
+                "pcm_s16le",
+                str(output_path),
+            ],
+            check=True,
+            capture_output=True,
+            timeout=FFMPEG_TIMEOUT_SECONDS,
+        )
+        return output_path
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+        stderr = getattr(exc, "stderr", None)
+        detail = (
+            (stderr or b"").decode("utf-8", "replace")
+            if isinstance(stderr, bytes)
+            else str(stderr or exc)
+        )
+        logger.warning(
+            "transcription dynaudnorm failed; using unnormalized audio: %s",
+            detail[-500:],
+        )
+        return input_path
 
 
 def _wav_duration(path: Path) -> float:
     with wave.open(str(path), "rb") as reader:
-        return reader.getnframes() / reader.getframerate()
+        rate = reader.getframerate()
+        return reader.getnframes() / rate if rate else 0.0
 
 
 def _encode_audio(content: bytes, workdir: Path, fmt: str, name: str) -> bytes:
@@ -279,16 +351,20 @@ def _encode_audio(content: bytes, workdir: Path, fmt: str, name: str) -> bytes:
             ],
             check=True,
             capture_output=True,
+            timeout=FFMPEG_TIMEOUT_SECONDS,
         )
-    except (subprocess.CalledProcessError, OSError) as exc:
+        return target.read_bytes()
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
         stderr = getattr(exc, "stderr", None)
         detail = (
             (stderr or b"").decode("utf-8", "replace")
-            if stderr
-            else str(exc)
+            if isinstance(stderr, bytes)
+            else str(stderr or exc)
         )
         raise RuntimeError(f"mp3 encoding failed: {detail[-1000:]}") from exc
-    return target.read_bytes()
+    finally:
+        source.unlink(missing_ok=True)
+        target.unlink(missing_ok=True)
 
 
 def _get_model():
@@ -321,8 +397,8 @@ def _deepfilternet(input_path: Path, output_path: Path) -> None:
     # DeepFilterNet runs one forward pass over the whole signal, so a long
     # recording exhausts GPU memory. Process it in overlapping chunks and
     # cross-fade the joins; the result is the same length as the input.
-    chunk = sr * DF_CHUNK_SECONDS
-    overlap = sr * DF_OVERLAP_SECONDS
+    chunk = int(sr * DF_CHUNK_SECONDS)
+    overlap = int(sr * DF_OVERLAP_SECONDS)
     total = audio.shape[-1]
 
     if total <= chunk:
@@ -336,7 +412,13 @@ def _deepfilternet(input_path: Path, output_path: Path) -> None:
             if pieces:
                 blend = min(overlap, pieces[-1].shape[-1], segment.shape[-1])
                 if blend > 0:
-                    fade = torch.linspace(0.0, 1.0, blend)
+                    fade = torch.linspace(
+                        0.0,
+                        1.0,
+                        blend,
+                        device=segment.device,
+                        dtype=segment.dtype,
+                    )
                     tail = (
                         pieces[-1][..., -blend:] * (1.0 - fade)
                         + segment[..., :blend] * fade
@@ -353,6 +435,7 @@ def _deepfilternet(input_path: Path, output_path: Path) -> None:
         enhanced = torch.cat(pieces, dim=-1)
 
     save_audio(str(output_path), enhanced, sr)
+    _release_cuda_cache()
 
 
 def _resemble_enhance(input_path: Path, output_path: Path, mix: float) -> None:
@@ -376,7 +459,7 @@ def _resemble_enhance(input_path: Path, output_path: Path, mix: float) -> None:
         tau=0.5,
         run_dir=RESEMBLE_RUN_DIR,
     )
-    wet = wet.to(torch.float32)
+    wet = wet.cpu().to(torch.float32)
     if wet_rate != 48000:
         wet = torchaudio.functional.resample(wet, wet_rate, 48000)
 
@@ -386,14 +469,15 @@ def _resemble_enhance(input_path: Path, output_path: Path, mix: float) -> None:
     amount = max(0.0, min(1.0, mix))
     blended = wet * amount + dry * (1.0 - amount)
 
-    dry_rms = torch.sqrt(torch.mean(dry.square()))
-    wet_rms = torch.sqrt(torch.mean(blended.square()))
-    if wet_rms > 1e-6:
-        blended = blended * (dry_rms / wet_rms)
+    if length > 0:
+        dry_rms = torch.sqrt(torch.mean(dry.square()))
+        wet_rms = torch.sqrt(torch.mean(blended.square()))
+        if wet_rms > 1e-6:
+            blended = blended * (dry_rms / wet_rms)
 
-    peak = blended.abs().max()
-    if peak > 0.99:
-        blended = blended / peak * 0.99
+        peak = blended.abs().max()
+        if peak > 0.99:
+            blended = blended / peak * 0.99
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     torchaudio.save(
@@ -402,6 +486,7 @@ def _resemble_enhance(input_path: Path, output_path: Path, mix: float) -> None:
         48000,
         bits_per_sample=16,
     )
+    _release_cuda_cache()
 
 
 def _db_to_linear(db: float) -> float:
@@ -460,10 +545,16 @@ def _studio_polish(
             ],
             check=True,
             capture_output=True,
+            timeout=FFMPEG_TIMEOUT_SECONDS,
         )
-    except subprocess.CalledProcessError as exc:
-        stderr = (exc.stderr or b"").decode("utf-8", "replace")
-        raise RuntimeError(f"studio polish failed: {stderr[-1000:]}") from exc
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+        stderr = getattr(exc, "stderr", None)
+        detail = (
+            (stderr or b"").decode("utf-8", "replace")
+            if isinstance(stderr, bytes)
+            else str(stderr or exc)
+        )
+        raise RuntimeError(f"studio polish failed: {detail[-1000:]}") from exc
 
 
 def prepare_audio(
@@ -663,6 +754,7 @@ def _transcribe_raw(
         condition_on_previous_text=False,
         word_timestamps=True,
         vad_filter=True,
+        vad_parameters=dict(RAW_VAD_PARAMETERS),
         initial_prompt=prompt,
     )
 
@@ -717,7 +809,7 @@ def _transcribe_language(
     segments = result.get("segments", [])
     aligned_segments = segments
 
-    if language != "ar":
+    if language != "ar" and segments:
         try:
             align_model, metadata = _get_align_model(language)
             aligned = whisperx.align(
@@ -808,17 +900,22 @@ def transcribe_languages(
 ) -> Transcript:
     selected = list(dict.fromkeys(languages or ["en"]))
     candidates: list[LanguageSegment] = []
-    for language in selected:
-        if transcriber is not None:
+    if transcriber is not None:
+        for language in selected:
             candidates.extend(
                 _transcriber_language_segments(
                     transcriber(wav_path, language), language
                 )
             )
-        else:
-            candidates.extend(
-                _transcribe_language(wav_path, language, arabic_dialect)
+    else:
+        with tempfile.TemporaryDirectory() as tmp:
+            asr_wav = _normalize_for_transcription(
+                wav_path, Path(tmp) / "transcribe_norm.wav"
             )
+            for language in selected:
+                candidates.extend(
+                    _transcribe_language(asr_wav, language, arabic_dialect)
+                )
 
     if not candidates:
         return Transcript(speakers=[], segments=[])
@@ -893,6 +990,7 @@ def diarize_audio(
     if diarizer is not None:
         return diarizer(wav_path)
 
+    _release_cuda_cache()
     with tempfile.TemporaryDirectory() as tmp:
         diar_wav = Path(tmp) / "diarize.wav"
         turns_path = Path(tmp) / "turns.json"
@@ -921,6 +1019,8 @@ def diarize_audio(
             raise RuntimeError(f"Nemotron diarization failed: {stderr}") from exc
         except subprocess.TimeoutExpired as exc:
             raise RuntimeError("Nemotron diarization timed out") from exc
+        except OSError as exc:
+            raise RuntimeError(f"Nemotron diarization failed: {exc}") from exc
 
         payload = json.loads(turns_path.read_text(encoding="utf-8"))
 
@@ -1010,6 +1110,7 @@ def separate_music(
     dialogue_path = workdir / "dialogue.wav"
     torchaudio.save(str(music_path), music.cpu(), model.samplerate)
     torchaudio.save(str(dialogue_path), dialogue.cpu(), model.samplerate)
+    _release_cuda_cache()
     return music_path.read_bytes(), dialogue_path.read_bytes()
 
 
@@ -1021,7 +1122,7 @@ def gated_speaker_tracks(
         frames = reader.readframes(reader.getnframes())
 
     width = params.sampwidth * params.nchannels
-    total = len(frames) // width
+    total = len(frames) // width if width else 0
     tracks: dict[str, bytes] = {}
 
     for speaker in sorted({turn.speaker for turn in turns}):
@@ -1035,11 +1136,11 @@ def gated_speaker_tracks(
                 continue
             out[start * width : end * width] = frames[start * width : end * width]
 
-        path = wav_path.parent / f"{speaker}.wav"
-        with wave.open(str(path), "wb") as writer:
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as writer:
             writer.setparams(params)
             writer.writeframes(bytes(out))
-        tracks[speaker] = path.read_bytes()
+        tracks[speaker] = buf.getvalue()
 
     return tracks
 
@@ -1168,7 +1269,7 @@ def _run_handler(
     diarizer: Diarizer | None = None,
     separator: Separator | None = None,
 ) -> dict[str, Any]:
-    logger.info("downloading source %s", data["source_url"])
+    logger.info("downloading source %s", _redact_url(data["source_url"]))
     source = _download(client, data["source_url"])
     logger.info("downloaded %d bytes", len(source))
 

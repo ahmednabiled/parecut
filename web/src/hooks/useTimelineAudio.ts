@@ -25,6 +25,7 @@ export function useTimelineAudio(
   const sourcesRef = useRef(new Map<string, MediaElementAudioSourceNode>());
   const gainsRef = useRef(new Map<string, GainNode>());
   const analyserRef = useRef<AnalyserNode | null>(null);
+  const analyserDataRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
   const rafRef = useRef<number | null>(null);
   const masterRef = useRef<HTMLAudioElement | null>(null);
   const timeRef = useRef(0);
@@ -173,7 +174,13 @@ export function useTimelineAudio(
 
       const analyser = analyserRef.current;
       if (analyser) {
-        const data = new Uint8Array(analyser.fftSize);
+        if (
+          !analyserDataRef.current ||
+          analyserDataRef.current.length !== analyser.fftSize
+        ) {
+          analyserDataRef.current = new Uint8Array(analyser.fftSize);
+        }
+        const data = analyserDataRef.current;
         analyser.getByteTimeDomainData(data);
         let sum = 0;
         let peak = 0;
@@ -252,7 +259,7 @@ export function useTimelineAudio(
       if (context) {
         element.muted = false;
       } else {
-        element.muted = muted[id] ?? false;
+        element.muted = mutedRef.current[id] ?? false;
       }
     }
 
@@ -275,11 +282,13 @@ export function useTimelineAudio(
     setIsPlaying(true);
     if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(tick);
-  }, [currentTime, ensureGraph, muted, tick]);
+  }, [ensureGraph, tick]);
 
   const seek = useCallback(
     (time: number) => {
-      const target = Math.max(0, Math.min(duration, time));
+      if (!Number.isFinite(time)) return;
+      const maxDuration = Number.isFinite(duration) && duration > 0 ? duration : 0;
+      const target = Math.max(0, Math.min(maxDuration, time));
       seekTargetRef.current = target;
       seekStartedRef.current = performance.now();
       timeRef.current = target;
@@ -363,9 +372,10 @@ export function useTimelineAudio(
   }, [muted]);
 
   useEffect(() => {
+    const trackedElements = elements.current;
     return () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-      for (const element of elements.current.values()) element.pause();
+      for (const element of trackedElements.values()) element.pause();
       void contextRef.current?.close();
     };
   }, []);

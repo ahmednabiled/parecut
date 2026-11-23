@@ -2,13 +2,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch } from "../api/client";
-import type { JobStatus, ProfileResponse } from "../api/types";
+import type { Job, JobStatus, ProfileResponse } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import Icon from "../components/Icon";
 import StatusPill from "../components/StatusPill";
 import { formatDuration } from "../lib/format";
 
 type StatusFilter = "all" | JobStatus;
+
+const EMPTY_JOBS: Job[] = [];
 
 const STATUS_LABELS: Record<StatusFilter, string> = {
   all: "All",
@@ -56,7 +58,7 @@ export default function Dashboard() {
     },
   });
 
-  const jobs = profileQuery.data?.jobs ?? [];
+  const jobs = profileQuery.data?.jobs ?? EMPTY_JOBS;
   const balance =
     profileQuery.data?.profile.credit_balance_minutes ??
     me?.profile.credit_balance_minutes ??
@@ -179,7 +181,7 @@ export default function Dashboard() {
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Filter by filename…"
                   aria-label="Filter projects by filename"
-                  className="h-9 w-56 rounded-full border border-outline-variant bg-surface-container-low pl-9 pr-8 text-[13px] text-on-surface placeholder:text-on-surface-variant/70 transition-colors duration-150 ease-standard hover:border-outline focus:border-on-surface"
+                  className="h-9 w-56 rounded-full border border-outline-variant bg-surface-container-low pl-9 pr-8 text-[13px] text-on-surface placeholder:text-on-surface-variant/70 transition-colors duration-150 ease-standard hover:border-outline focus:border-on-surface [&::-webkit-search-cancel-button]:appearance-none"
                 />
                 {query ? (
                   <button
@@ -243,9 +245,19 @@ export default function Dashboard() {
             ))}
           </div>
         ) : profileQuery.isError ? (
-          <p className="mt-4 rounded-lg border border-error/25 bg-error-container px-4 py-3 text-sm text-on-error-container">
-            Could not load your projects. Refresh to try again.
-          </p>
+          <div
+            role="alert"
+            className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-error/25 bg-error-container px-4 py-3 text-sm text-on-error-container"
+          >
+            <p>Could not load your projects. Try again.</p>
+            <button
+              type="button"
+              onClick={() => void profileQuery.refetch()}
+              className="inline-flex h-8 items-center rounded-[16px] border border-error/30 px-3 text-[12px] font-medium text-on-error-container transition-colors duration-150 ease-standard hover:bg-error/15"
+            >
+              Retry
+            </button>
+          </div>
         ) : jobs.length === 0 ? (
           <div className="mt-4 rounded-xl border border-outline-variant bg-surface-container-low px-6 py-10">
             <h3 className="text-[15px] font-medium text-on-surface">No projects yet</h3>

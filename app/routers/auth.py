@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -8,6 +9,7 @@ from app.config import Settings
 from app.db import get_session
 from app.deps import get_current_user, get_settings_dep
 from app.models import User, UserProfile
+from app.ratelimit import rate_limit
 from app.schemas import (
     LoginRequest,
     RegisterRequest,
@@ -27,7 +29,12 @@ from app.services.credits import add_ledger_entry
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
-@router.post("/register", response_model=SessionUser, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register",
+    response_model=SessionUser,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(rate_limit("auth"))],
+)
 async def register(
     payload: RegisterRequest,
     response: Response,
@@ -44,25 +51,35 @@ async def register(
         hashed_password=hash_password(payload.password),
         full_name=payload.full_name.strip(),
     )
-    session.add(user)
-    await session.flush()
+    try:
+        session.add(user)
+        await session.flush()
 
-    profile = UserProfile(user_id=user.id, credit_balance_minutes=Decimal("0"))
-    session.add(profile)
-    await session.flush()
-    await add_ledger_entry(
-        session,
-        profile,
-        delta=settings.signup_bonus_minutes,
-        reason="signup_bonus",
-    )
-    await session.commit()
+        profile = UserProfile(user_id=user.id, credit_balance_minutes=Decimal("0"))
+        session.add(profile)
+        await session.flush()
+        await add_ledger_entry(
+            session,
+            profile,
+            delta=settings.signup_bonus_minutes,
+            reason="signup_bonus",
+        )
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
+        ) from exc
 
     set_session_cookie(response, create_session_token(user.id, settings), settings)
     return SessionUser(user=to_user_read(user), profile=to_profile_read(profile))
 
 
-@router.post("/login", response_model=SessionUser)
+@router.post(
+    "/login",
+    response_model=SessionUser,
+    dependencies=[Depends(rate_limit("auth"))],
+)
 async def login(
     payload: LoginRequest,
     response: Response,

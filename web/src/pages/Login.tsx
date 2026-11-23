@@ -15,7 +15,11 @@ export default function Login() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const next = params.get("next") || "/";
+  const rawNext = params.get("next");
+  const next =
+    rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//")
+      ? rawNext
+      : "/";
 
   async function loginWith(targetEmail: string, targetPassword: string) {
     setError(null);
@@ -23,9 +27,13 @@ export default function Login() {
     try {
       const data = await apiFetch<SessionUser>("/api/auth/login", {
         method: "POST",
-        body: JSON.stringify({ email: targetEmail, password: targetPassword }),
+        body: JSON.stringify({
+          email: targetEmail.trim(),
+          password: targetPassword,
+        }),
       });
       queryClient.setQueryData(["me"], data);
+      void queryClient.invalidateQueries({ queryKey: ["profile"] });
       navigate(next, { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Unable to sign in. Try again.");
@@ -36,6 +44,14 @@ export default function Login() {
 
   function submit(event: FormEvent) {
     event.preventDefault();
+    if (!email.trim()) {
+      setError("Enter your email address.");
+      return;
+    }
+    if (!password) {
+      setError("Enter your password.");
+      return;
+    }
     void loginWith(email, password);
   }
 

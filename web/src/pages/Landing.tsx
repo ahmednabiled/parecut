@@ -458,7 +458,7 @@ export default function Landing() {
           <Link to="/" className="shrink-0 justify-self-start">
             <img
               src="/brand/login-logo.png"
-              alt="Pare Cut"
+              alt="Parecut"
               className="h-10 w-auto"
             />
           </Link>
@@ -940,18 +940,37 @@ export default function Landing() {
             <span>AI audio engineering and rough-cut preparation</span>
           </div>
           <div className="flex items-center gap-5">
-            <Link
-              to="/login"
-              className="transition-colors duration-150 ease-standard hover:text-on-surface"
-            >
-              Sign in
-            </Link>
-            <Link
-              to="/register"
-              className="transition-colors duration-150 ease-standard hover:text-on-surface"
-            >
-              Create account
-            </Link>
+            {me ? (
+              <>
+                <Link
+                  to="/"
+                  className="transition-colors duration-150 ease-standard hover:text-on-surface"
+                >
+                  Dashboard
+                </Link>
+                <Link
+                  to="/new"
+                  className="transition-colors duration-150 ease-standard hover:text-on-surface"
+                >
+                  New project
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link
+                  to="/login"
+                  className="transition-colors duration-150 ease-standard hover:text-on-surface"
+                >
+                  Sign in
+                </Link>
+                <Link
+                  to="/register"
+                  className="transition-colors duration-150 ease-standard hover:text-on-surface"
+                >
+                  Create account
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </footer>

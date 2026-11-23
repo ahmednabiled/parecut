@@ -15,7 +15,7 @@ export async function apiFetch<T>(
   init: RequestInit = {},
 ): Promise<T> {
   const headers = new Headers(init.headers);
-  if (init.body && !headers.has("content-type")) {
+  if (typeof init.body === "string" && !headers.has("content-type")) {
     headers.set("content-type", "application/json");
   }
   const response = await fetch(path, {
@@ -32,8 +32,25 @@ export async function apiFetch<T>(
       payload = body;
       if (body !== null && typeof body === "object" && "detail" in body) {
         const value = (body as { detail?: unknown }).detail;
-        if (typeof value === "string") {
+        if (typeof value === "string" && value.trim()) {
           detail = value;
+        } else if (Array.isArray(value)) {
+          const messages = value
+            .map((item) => {
+              if (
+                item !== null &&
+                typeof item === "object" &&
+                "msg" in item &&
+                typeof (item as { msg?: unknown }).msg === "string"
+              ) {
+                return (item as { msg: string }).msg.replace(/^Value error,\s*/i, "");
+              }
+              return null;
+            })
+            .filter((msg): msg is string => Boolean(msg));
+          if (messages.length > 0) {
+            detail = messages.join(". ");
+          }
         }
       }
     } catch {

@@ -68,6 +68,17 @@ export default function AppShell() {
     };
   }, [editor]);
 
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && window.innerWidth < 1024) {
+        setSidebarOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [sidebarOpen]);
+
   function closeOnMobile() {
     if (window.innerWidth < 1024) setSidebarOpen(false);
   }
@@ -82,9 +93,14 @@ export default function AppShell() {
     0;
 
   async function signOut() {
-    await apiFetch<void>("/api/auth/logout", { method: "POST" });
-    queryClient.clear();
-    navigate("/login", { replace: true });
+    try {
+      await apiFetch<void>("/api/auth/logout", { method: "POST" });
+    } catch {
+      // Clear local session state even if the network request fails.
+    } finally {
+      queryClient.clear();
+      navigate("/login", { replace: true });
+    }
   }
 
   return (
@@ -104,6 +120,7 @@ export default function AppShell() {
 
       <aside
         aria-hidden={!sidebarOpen}
+        inert={!sidebarOpen}
         className={`fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 flex-col overflow-hidden border-r border-outline-variant bg-surface-container-low px-3 py-5 transition-transform duration-200 ease-standard lg:static lg:z-auto lg:translate-x-0 lg:transition-[width] ${
           sidebarOpen
             ? "translate-x-0 lg:w-60"
@@ -114,7 +131,7 @@ export default function AppShell() {
           <NavLink to="/" onClick={closeOnMobile} className="shrink-0">
             <img
               src="/brand/login-logo.png"
-              alt="Pare Cut"
+              alt="Parecut"
               className="h-14 w-auto"
             />
           </NavLink>
@@ -209,7 +226,7 @@ export default function AppShell() {
             </button>
             <img
               src="/brand/login-logo.png"
-              alt="Pare Cut"
+              alt="Parecut"
               className="h-12 w-auto"
             />
           </div>
