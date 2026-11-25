@@ -239,14 +239,33 @@ RUN /opt/nemotron/bin/python /opt/nemotron/diarize.py \
     && rm -f /tmp/nemotron_smoke.wav /tmp/nemotron_smoke.json
 
 # Isolated venv for UVR De-Reverb (audio-separator) sharing the CUDA torch build.
+# Install audio-separator with --no-deps so pip does not compile diffq (no cp311
+# wheel / no gcc in python:3.11-slim), pull torchvision (which upgrades torch
+# away from cu128), or require numpy>=2 against system librosa/scipy. Only the
+# VR-architecture runtime deps missing from the base image are installed here.
 RUN python -m venv --system-site-packages /opt/dereverb
-RUN /opt/dereverb/bin/pip install --no-cache-dir "audio-separator" "numpy<2"
+RUN /opt/dereverb/bin/pip install --no-cache-dir --no-deps "audio-separator==0.48.0" \
+    && /opt/dereverb/bin/pip install --no-cache-dir \
+        "onnxruntime>=1.17" \
+        "pydub>=0.25" \
+        "six>=1.16" \
+        "numpy<2"
 RUN /opt/dereverb/bin/python - <<'PY'
+import numpy
+import onnxruntime
 import torch
 from audio_separator.separator import Separator  # noqa: F401
 
-print("dereverb torch", torch.__version__)
+print(
+    "dereverb torch",
+    torch.__version__,
+    "numpy",
+    numpy.__version__,
+    "onnxruntime",
+    onnxruntime.__version__,
+)
 assert torch.version.cuda, "De-reverb must share the CUDA torch build"
+assert "+cu128" in torch.__version__, f"expected a cu128 wheel, got {torch.__version__}"
 PY
 RUN /opt/dereverb/bin/python - <<'PY'
 from audio_separator.separator import Separator
