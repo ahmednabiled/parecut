@@ -248,14 +248,20 @@ RUN /opt/dereverb/bin/pip install --no-cache-dir --no-deps "audio-separator==0.4
     && /opt/dereverb/bin/pip install --no-cache-dir \
         "onnxruntime>=1.17" \
         "pydub>=0.25" \
+        "samplerate==0.2.4" \
         "six>=1.16" \
         "numpy<2"
 RUN /opt/dereverb/bin/python - <<'PY'
+import librosa
 import numpy
 import onnxruntime
+import samplerate
 import torch
 from audio_separator.separator import Separator  # noqa: F401
 
+probe = numpy.zeros(4410, dtype=numpy.float32)
+librosa.resample(probe, orig_sr=44100, target_sr=22050, res_type="sinc_fastest")
+librosa.resample(probe, orig_sr=44100, target_sr=22050, res_type="kaiser_fast")
 print(
     "dereverb torch",
     torch.__version__,
@@ -263,6 +269,8 @@ print(
     numpy.__version__,
     "onnxruntime",
     onnxruntime.__version__,
+    "samplerate",
+    samplerate.__version__,
 )
 assert torch.version.cuda, "De-reverb must share the CUDA torch build"
 assert "+cu128" in torch.__version__, f"expected a cu128 wheel, got {torch.__version__}"
@@ -275,17 +283,10 @@ sep.load_model("UVR-DeEcho-DeReverb.pth")
 print("UVR-DeEcho-DeReverb ready")
 PY
 COPY runpod_app/dereverb.py /opt/dereverb/dereverb.py
-RUN python - <<'PY'
-import wave
-
-with wave.open("/tmp/dereverb_smoke.wav", "wb") as writer:
-    writer.setnchannels(1)
-    writer.setsampwidth(2)
-    writer.setframerate(48000)
-    writer.writeframes(b"\x00\x00" * 48000)
-PY
-RUN HF_HUB_OFFLINE=1 /opt/dereverb/bin/python /opt/dereverb/dereverb.py \
-    /tmp/dereverb_smoke.wav /tmp/dereverb_smoke_out.wav \
+RUN ffmpeg -hide_banner -loglevel error -y -f lavfi -i "sine=frequency=440:duration=1" \
+    -ar 48000 -ac 1 /tmp/dereverb_smoke.wav \
+    && HF_HUB_OFFLINE=1 /opt/dereverb/bin/python /opt/dereverb/dereverb.py \
+        /tmp/dereverb_smoke.wav /tmp/dereverb_smoke_out.wav \
     && test -s /tmp/dereverb_smoke_out.wav \
     && rm -f /tmp/dereverb_smoke.wav /tmp/dereverb_smoke_out.wav
 

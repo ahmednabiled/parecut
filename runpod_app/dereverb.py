@@ -10,7 +10,16 @@ from pathlib import Path
 def _is_empty_wav(path: Path) -> bool:
     try:
         with wave.open(str(path), "rb") as reader:
-            return reader.getnframes() == 0
+            if reader.getnframes() == 0:
+                return True
+            if reader.getsampwidth() == 2:
+                while True:
+                    chunk = reader.readframes(65536)
+                    if not chunk:
+                        return True
+                    if any(chunk):
+                        return False
+            return False
     except wave.Error:
         return False
 
