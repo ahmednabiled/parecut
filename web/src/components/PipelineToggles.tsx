@@ -9,6 +9,7 @@ interface PipelineTogglesProps {
 
 type StageKey = Exclude<
   keyof PipelineConfig,
+  | "dereverb"
   | "enhance_mix"
   | "studio_chain"
   | "transcription_languages"

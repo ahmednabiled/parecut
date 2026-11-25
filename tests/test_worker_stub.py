@@ -984,3 +984,77 @@ def test_convert_to_wav_and_studio_polish_wrap_oserror(tmp_path, monkeypatch):
         _convert_to_wav(tmp_path / "in.wav", tmp_path / "out.wav")
     with pytest.raises(RuntimeError, match="studio polish failed"):
         _studio_polish(tmp_path / "in.wav", tmp_path / "out.wav", StudioChain())
+
+
+def test_studio_filter_chain_includes_agate_when_enabled():
+    enabled = _studio_filter_chain(
+        StudioChain(
+            gate_enabled=True,
+            gate_threshold_db=-40.0,
+            gate_range_db=-12.0,
+            gate_ratio=2.0,
+        )
+    )
+    assert "agate=threshold=0.01000:ratio=2.00:range=0.25119:attack=10:release=180:knee=3:detection=rms" in enabled
+
+    disabled = _studio_filter_chain(StudioChain(gate_enabled=False))
+    assert "agate=" not in disabled
+
+    zero_range = _studio_filter_chain(StudioChain(gate_enabled=True, gate_range_db=0.0))
+    assert "agate=" not in zero_range
+
+
+def test_handler_runs_dereverb_before_enhancer_and_skips_when_disabled():
+    dereverbed_audio = make_wav(1.0)
+    seen_inputs: list[bytes] = []
+
+    def fake_dereverber(input_path: Path, output_path: Path) -> None:
+        output_path.write_bytes(dereverbed_audio)
+
+    def checking_enhancer(input_path: Path, output_path: Path, mix: float) -> None:
+        seen_inputs.append(input_path.read_bytes())
+        output_path.write_bytes(ENHANCED_AUDIO)
+
+    on_cfg = PipelineConfig(
+        noise_reduction=False,
+        enhance=True,
+        dereverb=True,
+        separate_music=False,
+        separate_speakers=False,
+        transcribe=False,
+        rough_cut=False,
+        studio_chain=StudioChain(enabled=False),
+    )
+    handler(
+        make_job(on_cfg),
+        client=FakeClient(),
+        denoiser=fake_denoiser,
+        dereverber=fake_dereverber,
+        enhancer=checking_enhancer,
+    )
+    assert seen_inputs == [dereverbed_audio]
+
+    seen_inputs.clear()
+
+    def fail_dereverber(input_path: Path, output_path: Path) -> None:
+        raise AssertionError("dereverber should not run when disabled")
+
+    off_cfg = PipelineConfig(
+        noise_reduction=False,
+        enhance=True,
+        dereverb=False,
+        separate_music=False,
+        separate_speakers=False,
+        transcribe=False,
+        rough_cut=False,
+        studio_chain=StudioChain(enabled=False),
+    )
+    handler(
+        make_job(off_cfg),
+        client=FakeClient(),
+        denoiser=fake_denoiser,
+        dereverber=fail_dereverber,
+        enhancer=checking_enhancer,
+    )
+    assert seen_inputs and seen_inputs[0] != dereverbed_audio
+

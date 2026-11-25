@@ -352,6 +352,7 @@ export default function JobEditor() {
     mutationFn: (variables: {
       effect: EffectName;
       enhanceMix?: number;
+      dereverb?: boolean;
       studio?: StudioChain;
       languages?: TranscriptionLanguage[];
       audioFormat?: AudioFormat;
@@ -361,6 +362,9 @@ export default function JobEditor() {
       const payload: Record<string, unknown> = { effect: variables.effect };
       if (variables.enhanceMix !== undefined) {
         payload.enhance_mix = variables.enhanceMix;
+      }
+      if (variables.dereverb !== undefined) {
+        payload.dereverb = variables.dereverb;
       }
       if (variables.studio !== undefined) {
         payload.studio = variables.studio;
@@ -489,6 +493,7 @@ export default function JobEditor() {
       languages?: TranscriptionLanguage[],
       audioFormat?: AudioFormat,
       arabicDialect?: ArabicDialect,
+      dereverb?: boolean,
     ) => {
       setApplyError(null);
       setShortfall(null);
@@ -499,6 +504,7 @@ export default function JobEditor() {
       applyMutation.mutate({
         effect,
         enhanceMix,
+        dereverb,
         studio,
         languages,
         audioFormat,
@@ -926,6 +932,7 @@ export default function JobEditor() {
           speakerJob={speakerJob}
           onSpeakerUpdated={handleSpeakerUpdated}
           defaultMix={project.pipeline_config.enhance_mix}
+          defaultDereverb={project.pipeline_config.dereverb ?? true}
           defaultStudio={
             project.pipeline_config.studio_chain ?? DEFAULT_STUDIO
           }

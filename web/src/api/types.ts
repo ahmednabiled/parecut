@@ -40,6 +40,7 @@ export interface StageState {
 export interface PipelineConfig {
   noise_reduction: boolean;
   enhance: boolean;
+  dereverb?: boolean;
   enhance_mix: number;
   studio_chain: StudioChain;
   separate_music: boolean;
@@ -54,6 +55,10 @@ export interface PipelineConfig {
 export interface StudioChain {
   enabled: boolean;
   highpass_hz: number;
+  gate_enabled: boolean;
+  gate_threshold_db: number;
+  gate_range_db: number;
+  gate_ratio: number;
   body_db: number;
   mud_db: number;
   presence_db: number;

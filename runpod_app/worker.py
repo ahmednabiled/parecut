@@ -44,6 +44,7 @@ AUDIO_ARTIFACT_KINDS = {
 }
 
 Denoiser = Callable[[Path, Path], None]
+Dereverber = Callable[[Path, Path], None]
 Enhancer = Callable[[Path, Path, float], None]
 StudioPolisher = Callable[[Path, Path, StudioChain], None]
 Transcriber = Callable[[Path, str], Transcript]
@@ -52,6 +53,9 @@ Separator = Callable[[Path, Path], tuple[bytes, bytes]]
 
 NEMOTRON_PYTHON = "/opt/nemotron/bin/python"
 NEMOTRON_SCRIPT = "/opt/nemotron/diarize.py"
+DEREVERB_PYTHON = "/opt/dereverb/bin/python"
+DEREVERB_SCRIPT = "/opt/dereverb/dereverb.py"
+DEREVERB_TIMEOUT_SECONDS = 600
 RESEMBLE_RUN_DIR = Path(
     os.getenv(
         "PARECUT_RESEMBLE_RUN_DIR",
@@ -438,6 +442,51 @@ def _deepfilternet(input_path: Path, output_path: Path) -> None:
     _release_cuda_cache()
 
 
+def _dereverb(input_path: Path, output_path: Path) -> None:
+    """Remove room echo/reverb in an isolated venv, falling back to passthrough."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if not (Path(DEREVERB_PYTHON).is_file() and Path(DEREVERB_SCRIPT).is_file()):
+        logger.warning(
+            "dereverb runtime not installed at %s; skipping dereverb",
+            DEREVERB_PYTHON,
+        )
+        output_path.write_bytes(input_path.read_bytes())
+        return
+
+    _release_cuda_cache()
+    try:
+        subprocess.run(
+            [
+                DEREVERB_PYTHON,
+                DEREVERB_SCRIPT,
+                str(input_path),
+                str(output_path),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=DEREVERB_TIMEOUT_SECONDS,
+            env={
+                **os.environ,
+                "PARECUT_DEREVERB_DEVICE": _device_for("enhance"),
+            },
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+        stderr = getattr(exc, "stderr", None)
+        detail = (
+            (stderr or b"").decode("utf-8", "replace")
+            if isinstance(stderr, bytes)
+            else str(stderr or exc)
+        )
+        logger.warning("dereverb failed; skipping dereverb: %s", detail[-500:])
+        output_path.write_bytes(input_path.read_bytes())
+        return
+
+    if not output_path.is_file() or output_path.stat().st_size == 0:
+        logger.warning("dereverb produced empty output; skipping dereverb")
+        output_path.write_bytes(input_path.read_bytes())
+
+
 def _resemble_enhance(input_path: Path, output_path: Path, mix: float) -> None:
     import torch
     import torchaudio
@@ -453,7 +502,7 @@ def _resemble_enhance(input_path: Path, output_path: Path, mix: float) -> None:
         dwav=dry,
         sr=48000,
         device=device,
-        nfe=32,
+        nfe=24,
         solver="midpoint",
         lambd=0.5,
         tau=0.5,
@@ -496,10 +545,22 @@ def _db_to_linear(db: float) -> float:
 def _studio_filter_chain(chain: StudioChain) -> str:
     filters = [
         f"highpass=f={chain.highpass_hz:.0f}:poles=2",
-        f"equalizer=f=120:t=q:w=1:g={chain.body_db:.2f}",
-        f"equalizer=f=320:t=q:w=1:g={chain.mud_db:.2f}",
-        f"equalizer=f=3500:t=q:w=1:g={chain.presence_db:.2f}",
     ]
+    if chain.gate_enabled and chain.gate_range_db < 0:
+        filters.append(
+            "agate=threshold={:.5f}:ratio={:.2f}:range={:.5f}:attack=10:release=180:knee=3:detection=rms".format(
+                _db_to_linear(chain.gate_threshold_db),
+                chain.gate_ratio,
+                _db_to_linear(chain.gate_range_db),
+            )
+        )
+    filters.extend(
+        [
+            f"equalizer=f=120:t=q:w=1:g={chain.body_db:.2f}",
+            f"equalizer=f=320:t=q:w=1:g={chain.mud_db:.2f}",
+            f"equalizer=f=3500:t=q:w=1:g={chain.presence_db:.2f}",
+        ]
+    )
     if chain.deesser > 0:
         filters.append(f"deesser=i={chain.deesser:.3f}:m=0.5:f=0.5")
     filters.extend(
@@ -1224,6 +1285,7 @@ def handler(
     client: httpx.Client | None = None,
     *,
     denoiser: Denoiser | None = None,
+    dereverber: Dereverber | None = None,
     enhancer: Enhancer | None = None,
     polisher: StudioPolisher | None = None,
     transcriber: Transcriber | None = None,
@@ -1244,6 +1306,7 @@ def handler(
             client,
             source_filename,
             denoiser=denoiser,
+            dereverber=dereverber,
             enhancer=enhancer,
             polisher=polisher,
             transcriber=transcriber,
@@ -1263,6 +1326,7 @@ def _run_handler(
     source_filename: str,
     *,
     denoiser: Denoiser | None = None,
+    dereverber: Dereverber | None = None,
     enhancer: Enhancer | None = None,
     polisher: StudioPolisher | None = None,
     transcriber: Transcriber | None = None,
@@ -1291,16 +1355,25 @@ def _run_handler(
 
         enhanced: bytes | None = None
         if config.enhance:
-            _progress(job, "enhance", 15)
+            enhance_input = working_wav
+            if config.dereverb:
+                _progress(job, "enhance", 10)
+                dereverbed_path = workdir / "dereverbed.wav"
+                if dereverber is None:
+                    _dereverb(working_wav, dereverbed_path)
+                else:
+                    dereverber(working_wav, dereverbed_path)
+                enhance_input = dereverbed_path
+            _progress(job, "enhance", 35)
             enhanced_path = workdir / "enhanced.wav"
             if enhancer is None:
                 _resemble_enhance(
-                    working_wav,
+                    enhance_input,
                     enhanced_path,
                     config.enhance_mix,
                 )
             else:
-                enhancer(working_wav, enhanced_path, config.enhance_mix)
+                enhancer(enhance_input, enhanced_path, config.enhance_mix)
             enhanced = enhanced_path.read_bytes()
 
             if config.studio_chain.enabled:

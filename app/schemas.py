@@ -143,6 +143,7 @@ class JobUpdate(BaseModel):
 class EffectCreate(BaseModel):
     effect: EffectName
     enhance_mix: float | None = Field(default=None, ge=0, le=1)
+    dereverb: bool | None = None
     studio: StudioChain | None = None
     languages: list[TranscriptionLanguage] | None = None
     arabic_dialect: ArabicDialect | None = None

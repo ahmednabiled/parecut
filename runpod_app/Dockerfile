@@ -158,7 +158,7 @@ PY
 
 # Verify the studio finishing and transcription normalization filters are available in this ffmpeg build.
 RUN ffmpeg -hide_banner -loglevel error -y -f lavfi -i "sine=frequency=440:duration=1" \
-    -af "highpass=f=75:poles=2,equalizer=f=120:t=q:w=1:g=2,equalizer=f=320:t=q:w=1:g=-2,equalizer=f=3500:t=q:w=1:g=1.5,deesser=i=0.35:m=0.5:f=0.5,acompressor=threshold=0.126:ratio=2.5:attack=15:release=150:makeup=1:knee=2.5:detection=rms,alimiter=limit=0.891:attack=5:release=50:level=false,loudnorm=I=-16:TP=-1.5:LRA=11" \
+    -af "highpass=f=75:poles=2,agate=threshold=0.01000:ratio=2.00:range=0.25119:attack=10:release=180:knee=3:detection=rms,equalizer=f=120:t=q:w=1:g=2,equalizer=f=320:t=q:w=1:g=-2,equalizer=f=3500:t=q:w=1:g=1.5,deesser=i=0.35:m=0.5:f=0.5,acompressor=threshold=0.126:ratio=2.5:attack=15:release=150:makeup=1:knee=2.5:detection=rms,alimiter=limit=0.891:attack=5:release=50:level=false,loudnorm=I=-16:TP=-1.5:LRA=11" \
     -ar 48000 -ac 1 /tmp/studio_smoke.wav \
     && ffmpeg -hide_banner -loglevel error -y -f lavfi -i "sine=frequency=440:duration=1" \
     -af "dynaudnorm=f=150:g=5:p=0.9:m=15" \
@@ -237,6 +237,38 @@ PY
 RUN /opt/nemotron/bin/python /opt/nemotron/diarize.py \
     /tmp/nemotron_smoke.wav /tmp/nemotron_smoke.json \
     && rm -f /tmp/nemotron_smoke.wav /tmp/nemotron_smoke.json
+
+# Isolated venv for UVR De-Reverb (audio-separator) sharing the CUDA torch build.
+RUN python -m venv --system-site-packages /opt/dereverb
+RUN /opt/dereverb/bin/pip install --no-cache-dir "audio-separator" "numpy<2"
+RUN /opt/dereverb/bin/python - <<'PY'
+import torch
+from audio_separator.separator import Separator  # noqa: F401
+
+print("dereverb torch", torch.__version__)
+assert torch.version.cuda, "De-reverb must share the CUDA torch build"
+PY
+RUN /opt/dereverb/bin/python - <<'PY'
+from audio_separator.separator import Separator
+
+sep = Separator(model_file_dir="/opt/dereverb/models")
+sep.load_model("UVR-DeEcho-DeReverb.pth")
+print("UVR-DeEcho-DeReverb ready")
+PY
+COPY runpod_app/dereverb.py /opt/dereverb/dereverb.py
+RUN python - <<'PY'
+import wave
+
+with wave.open("/tmp/dereverb_smoke.wav", "wb") as writer:
+    writer.setnchannels(1)
+    writer.setsampwidth(2)
+    writer.setframerate(48000)
+    writer.writeframes(b"\x00\x00" * 48000)
+PY
+RUN HF_HUB_OFFLINE=1 /opt/dereverb/bin/python /opt/dereverb/dereverb.py \
+    /tmp/dereverb_smoke.wav /tmp/dereverb_smoke_out.wav \
+    && test -s /tmp/dereverb_smoke_out.wav \
+    && rm -f /tmp/dereverb_smoke.wav /tmp/dereverb_smoke_out.wav
 
 ENV HF_HUB_OFFLINE=1
 ENV TRANSFORMERS_OFFLINE=1

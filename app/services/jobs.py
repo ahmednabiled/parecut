@@ -37,6 +37,7 @@ def effect_config(
     languages: list[TranscriptionLanguage] | None = None,
     arabic_dialect: ArabicDialect | None = None,
     audio_format: AudioFormat | None = None,
+    dereverb: bool | None = None,
 ) -> PipelineConfig:
     values = DRAFT_CONFIG.model_dump()
     if audio_format is not None:
@@ -46,6 +47,8 @@ def effect_config(
     elif effect == "enhance":
         values["enhance"] = True
         values["enhance_mix"] = enhance_mix if enhance_mix is not None else 0.8
+        if dereverb is not None:
+            values["dereverb"] = dereverb
         if studio is not None:
             values["studio_chain"] = studio.model_dump()
     elif effect == "separate_music":
@@ -196,6 +199,7 @@ async def create_effect_run(
         data.languages,
         data.arabic_dialect,
         data.audio_format,
+        data.dereverb,
     )
 
     source_key = parent.source_r2_key

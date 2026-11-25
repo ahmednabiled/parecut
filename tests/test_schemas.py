@@ -1,13 +1,29 @@
 import pytest
 from pydantic import ValidationError
 
-from parecut_engine.schemas import JobEvent, PipelineConfig
+from parecut_engine.schemas import JobEvent, PipelineConfig, StudioChain
 
 
 def test_pipeline_defaults_are_full_run():
     config = PipelineConfig()
     assert config.rough_cut is True
+    assert config.dereverb is True
     assert config.enhance_mix == 0.8
+
+
+def test_studio_chain_gate_defaults_and_bounds():
+    chain = StudioChain()
+    assert chain.gate_enabled is True
+    assert chain.gate_threshold_db == -40.0
+    assert chain.gate_range_db == -12.0
+    assert chain.gate_ratio == 2.0
+
+    with pytest.raises(ValidationError):
+        StudioChain(gate_threshold_db=0.0)
+    with pytest.raises(ValidationError):
+        StudioChain(gate_range_db=5.0)
+    with pytest.raises(ValidationError):
+        StudioChain(gate_ratio=12.0)
 
 
 def test_rough_cut_requires_transcribe():

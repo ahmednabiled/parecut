@@ -118,8 +118,13 @@ async def test_enhance_effect_stores_studio_chain(app, client):
         json={
             "effect": "enhance",
             "enhance_mix": 0.7,
+            "dereverb": False,
             "studio": {
                 "highpass_hz": 90,
+                "gate_enabled": True,
+                "gate_threshold_db": -36,
+                "gate_range_db": -15,
+                "gate_ratio": 2.5,
                 "body_db": 4,
                 "presence_db": 2.5,
                 "compressor_threshold_db": -20,
@@ -134,12 +139,17 @@ async def test_enhance_effect_stores_studio_chain(app, client):
     studio = child["pipeline_config"]["studio_chain"]
     assert studio["enabled"] is True
     assert studio["highpass_hz"] == 90
+    assert studio["gate_enabled"] is True
+    assert studio["gate_threshold_db"] == -36
+    assert studio["gate_range_db"] == -15
+    assert studio["gate_ratio"] == 2.5
     assert studio["body_db"] == 4
     assert studio["presence_db"] == 2.5
     assert studio["compressor_threshold_db"] == -20
     assert studio["compressor_ratio"] == 4
     assert studio["limiter_db"] == -1.5
     assert studio["loudness_lufs"] == -14
+    assert child["pipeline_config"]["dereverb"] is False
     assert child["pipeline_config"]["enhance_mix"] == 0.7
 
 

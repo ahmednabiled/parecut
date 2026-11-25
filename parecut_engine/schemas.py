@@ -28,6 +28,10 @@ StageName = Literal[
 class StudioChain(BaseModel):
     enabled: bool = True
     highpass_hz: float = Field(default=75, ge=20, le=300)
+    gate_enabled: bool = True
+    gate_threshold_db: float = Field(default=-40.0, ge=-70, le=-10)
+    gate_range_db: float = Field(default=-12.0, ge=-40, le=0)
+    gate_ratio: float = Field(default=2.0, ge=1, le=10)
     body_db: float = Field(default=2.0, ge=-12, le=12)
     mud_db: float = Field(default=-2.0, ge=-12, le=6)
     presence_db: float = Field(default=1.5, ge=-12, le=12)
@@ -43,6 +47,7 @@ class StudioChain(BaseModel):
 class PipelineConfig(BaseModel):
     noise_reduction: bool = True
     enhance: bool = True
+    dereverb: bool = True
     enhance_mix: float = Field(default=0.8, ge=0, le=1)
     studio_chain: StudioChain = Field(default_factory=StudioChain)
     separate_music: bool = True

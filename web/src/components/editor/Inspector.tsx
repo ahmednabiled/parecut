@@ -15,10 +15,12 @@ import {
   DEFAULT_LANGUAGES,
   DEFAULT_STUDIO,
   EFFECTS,
+  ENHANCE_PRESETS,
   latestRun,
   RUNNING_STATUSES,
   TRANSCRIPTION_LANGUAGES,
   type EffectDefinition,
+  type EnhancePreset,
 } from "../../lib/effects";
 import Icon from "../Icon";
 import SpeakerRoles from "../SpeakerRoles";
@@ -38,6 +40,7 @@ interface InspectorProps {
     languages?: TranscriptionLanguage[],
     audioFormat?: AudioFormat,
     arabicDialect?: ArabicDialect,
+    dereverb?: boolean,
   ) => void;
   inputLabel: string;
   error: string | null;
@@ -46,6 +49,7 @@ interface InspectorProps {
   speakerJob: Job | null;
   onSpeakerUpdated: () => void;
   defaultMix: number;
+  defaultDereverb?: boolean;
   defaultStudio: StudioChain;
   defaultLanguages: TranscriptionLanguage[];
   defaultAudioFormat: AudioFormat;
@@ -234,6 +238,54 @@ function StudioPanel({
             </StudioGroup>
 
             <StudioGroup title="Dynamics">
+              <label className="flex items-center justify-between gap-3 text-[11px] text-on-surface-variant">
+                Room gate (expander)
+                <input
+                  type="checkbox"
+                  checked={studio.gate_enabled}
+                  onChange={(event) =>
+                    onChange({ ...studio, gate_enabled: event.target.checked })
+                  }
+                  className="size-3.5 accent-[#ededed]"
+                />
+              </label>
+              {studio.gate_enabled ? (
+                <>
+                  <StudioSlider
+                    label="Gate threshold"
+                    value={studio.gate_threshold_db}
+                    min={-70}
+                    max={-10}
+                    step={1}
+                    display={`${Math.round(studio.gate_threshold_db)} dB`}
+                    onChange={(value) =>
+                      onChange({ ...studio, gate_threshold_db: value })
+                    }
+                  />
+                  <StudioSlider
+                    label="Gate reduction"
+                    value={studio.gate_range_db}
+                    min={-40}
+                    max={0}
+                    step={1}
+                    display={`${Math.round(studio.gate_range_db)} dB`}
+                    onChange={(value) =>
+                      onChange({ ...studio, gate_range_db: value })
+                    }
+                  />
+                  <StudioSlider
+                    label="Gate ratio"
+                    value={studio.gate_ratio}
+                    min={1}
+                    max={8}
+                    step={0.2}
+                    display={`${studio.gate_ratio.toFixed(1)}:1`}
+                    onChange={(value) =>
+                      onChange({ ...studio, gate_ratio: value })
+                    }
+                  />
+                </>
+              ) : null}
               <StudioSlider
                 label="De-ess"
                 value={studio.deesser}
@@ -405,6 +457,18 @@ function LanguagePicker({
   );
 }
 
+function matchesPreset(
+  preset: EnhancePreset,
+  mix: number,
+  dereverb: boolean,
+  studio: StudioChain,
+): boolean {
+  if (mix !== preset.mix || dereverb !== preset.dereverb) return false;
+  return (Object.keys(preset.studio) as (keyof StudioChain)[]).every(
+    (key) => studio[key] === preset.studio[key],
+  );
+}
+
 function EffectRow({
   definition,
   run,
@@ -412,6 +476,9 @@ function EffectRow({
   disabled,
   mix,
   onMix,
+  dereverb,
+  onDereverb,
+  onPreset,
   studio,
   onStudio,
   studioOpen,
@@ -428,6 +495,9 @@ function EffectRow({
   disabled: boolean;
   mix: number;
   onMix: (value: number) => void;
+  dereverb: boolean;
+  onDereverb: (value: boolean) => void;
+  onPreset: (preset: EnhancePreset) => void;
   studio: StudioChain;
   onStudio: (studio: StudioChain) => void;
   studioOpen: boolean;
@@ -441,6 +511,7 @@ function EffectRow({
     studio?: StudioChain,
     languages?: TranscriptionLanguage[],
     arabicDialect?: ArabicDialect,
+    dereverb?: boolean,
   ) => void;
 }) {
   const running = run !== null && RUNNING_STATUSES.has(run.status);
@@ -463,6 +534,31 @@ function EffectRow({
 
       {isEnhance ? (
         <div className="mt-4">
+          <div
+            role="group"
+            aria-label="Enhancement preset"
+            className="mb-3 flex flex-wrap gap-1.5"
+          >
+            {ENHANCE_PRESETS.map((preset) => {
+              const active = matchesPreset(preset, mix, dereverb, studio);
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  aria-pressed={active}
+                  disabled={busy || running}
+                  onClick={() => onPreset(preset)}
+                  className={`inline-flex h-6 items-center rounded-full border px-2.5 text-[11px] font-medium transition-colors duration-150 ease-standard disabled:cursor-not-allowed disabled:opacity-50 ${
+                    active
+                      ? "border-primary bg-primary text-on-primary"
+                      : "border-outline-variant text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+                  }`}
+                >
+                  {preset.label}
+                </button>
+              );
+            })}
+          </div>
           <div className="flex items-center justify-between text-[12px] text-on-surface-variant">
             <label htmlFor="enhance-mix">Mix</label>
             <span className="font-mono text-on-surface">{mix}%</span>
@@ -478,6 +574,16 @@ function EffectRow({
             onChange={(event) => onMix(Number(event.target.value))}
             className="mt-2 h-1.5 w-full cursor-pointer accent-[#ededed] disabled:cursor-not-allowed disabled:opacity-50"
           />
+          <label className="mt-3 flex items-center justify-between gap-3 text-[12px] text-on-surface">
+            <span>Remove room echo (De-Reverb)</span>
+            <input
+              type="checkbox"
+              checked={dereverb}
+              disabled={busy || running}
+              onChange={(event) => onDereverb(event.target.checked)}
+              className="size-4 accent-[#ededed] disabled:cursor-not-allowed disabled:opacity-50"
+            />
+          </label>
           <StudioPanel
             studio={studio}
             onChange={onStudio}
@@ -505,6 +611,7 @@ function EffectRow({
             isEnhance ? studio : undefined,
             isTranscribe ? languages : undefined,
             isTranscribe && languages.includes("ar") ? dialect : undefined,
+            isEnhance ? dereverb : undefined,
           )
         }
         className="mt-4 inline-flex h-8 items-center gap-2 rounded-[16px] border border-outline px-3 text-[12px] font-medium text-on-surface transition-colors duration-150 ease-standard hover:bg-surface-container-high disabled:cursor-not-allowed disabled:opacity-50"
@@ -550,6 +657,7 @@ export default function Inspector({
   speakerJob,
   onSpeakerUpdated,
   defaultMix,
+  defaultDereverb = true,
   defaultStudio,
   defaultLanguages,
   defaultAudioFormat,
@@ -558,10 +666,17 @@ export default function Inspector({
   const [mix, setMix] = useState(() =>
     Math.max(0, Math.min(100, Math.round(defaultMix * 100))),
   );
+  const [dereverb, setDereverb] = useState(defaultDereverb);
   const [studio, setStudio] = useState<StudioChain>(() => ({
     ...DEFAULT_STUDIO,
     ...defaultStudio,
   }));
+
+  function applyPreset(preset: EnhancePreset) {
+    setMix(preset.mix);
+    setDereverb(preset.dereverb);
+    setStudio({ ...preset.studio });
+  }
   const [studioOpen, setStudioOpen] = useState(false);
   const lastTranscribe = latestRun(effects, "transcribe");
   const lastAudioRun = [...effects].reverse().find((run) => {
@@ -730,6 +845,9 @@ export default function Inspector({
                 disabled={locked}
                 mix={mix}
                 onMix={setMix}
+                dereverb={dereverb}
+                onDereverb={setDereverb}
+                onPreset={applyPreset}
                 studio={studio}
                 onStudio={setStudio}
                 studioOpen={studioOpen}
@@ -743,6 +861,7 @@ export default function Inspector({
                   studioSettings,
                   languageSettings,
                   arabicDialect,
+                  dereverbSetting,
                 ) =>
                   onApply(
                     definition.name,
@@ -751,6 +870,7 @@ export default function Inspector({
                     languageSettings,
                     definition.producesAudio ? audioFormat : undefined,
                     arabicDialect,
+                    dereverbSetting,
                   )
                 }
               />

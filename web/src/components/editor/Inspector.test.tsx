@@ -185,4 +185,45 @@ describe("Inspector audio output", () => {
       "/api/jobs/run-1/artifacts/before-vtt/download",
     );
   });
+
+  it("applies the Heavy Echo preset and sends dereverb setting", async () => {
+    const onApply = renderInspector();
+    const user = userEvent.setup();
+
+    const heavyEcho = screen.getByRole("button", { name: "Heavy Echo" });
+    await user.click(heavyEcho);
+    expect(heavyEcho).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(screen.getByRole("button", { name: "Apply enhancement" }));
+
+    const args = onApply.mock.calls[0];
+    expect(args[0]).toBe("enhance");
+    expect(args[1]).toBe(0.85);
+    expect(args[2]).toMatchObject({
+      highpass_hz: 85,
+      gate_enabled: true,
+      gate_threshold_db: -35,
+      gate_range_db: -18,
+      gate_ratio: 3.0,
+    });
+    expect(args[6]).toBe(true);
+  });
+
+  it("sends dereverb=false when room echo removal is unchecked", async () => {
+    const onApply = renderInspector();
+    const user = userEvent.setup();
+
+    const checkbox = screen.getByRole("checkbox", {
+      name: /remove room echo/i,
+    });
+    expect(checkbox).toBeChecked();
+    await user.click(checkbox);
+    expect(checkbox).not.toBeChecked();
+
+    await user.click(screen.getByRole("button", { name: "Apply enhancement" }));
+
+    const args = onApply.mock.calls[0];
+    expect(args[0]).toBe("enhance");
+    expect(args[6]).toBe(false);
+  });
 });
